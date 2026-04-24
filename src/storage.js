@@ -95,6 +95,45 @@ function deletePlan(planId) {
   return plans;
 }
 
+function pushPlanItemsToTemplate(plan, template) {
+  const existingIds = new Set(template.defaultItems.map(i => i.id));
+  const itemsToAdd = plan.items.filter(
+    item => !item.sourceItemId || !existingIds.has(item.sourceItemId)
+  );
+
+  if (itemsToAdd.length === 0) return { template, plan, addedCount: 0 };
+
+  const newTemplateItems = itemsToAdd.map(item => ({
+    id: generateId('item'),
+    name: item.name,
+    importance: item.importance,
+    description: item.description,
+    size: item.size || '',
+    weight: item.weight || ''
+  }));
+
+  const idMap = new Map(itemsToAdd.map((item, i) => [item.planItemId, newTemplateItems[i].id]));
+
+  const updatedTemplate = {
+    ...template,
+    defaultItems: [...template.defaultItems, ...newTemplateItems],
+    version: (template.version || 1) + 1,
+    updatedAt: new Date().toISOString().split('T')[0]
+  };
+
+  const updatedPlan = {
+    ...plan,
+    items: plan.items.map(item => {
+      const newSourceItemId = idMap.get(item.planItemId);
+      if (!newSourceItemId) return item;
+      return { ...item, sourceItemId: newSourceItemId, sourceTemplateId: template.id };
+    }),
+    lastSyncedVersion: updatedTemplate.version
+  };
+
+  return { template: updatedTemplate, plan: updatedPlan, addedCount: newTemplateItems.length };
+}
+
 function syncPlanWithTemplate(plan, template) {
   const existingSourceIds = new Set(plan.items.map(item => item.sourceItemId).filter(Boolean));
   const newItems = (template.defaultItems || [])
@@ -130,5 +169,6 @@ export {
   addPlan,
   updatePlan,
   deletePlan,
-  syncPlanWithTemplate
+  syncPlanWithTemplate,
+  pushPlanItemsToTemplate
 };

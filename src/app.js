@@ -9,6 +9,7 @@ import {
   updatePlan,
   deletePlan,
   syncPlanWithTemplate,
+  pushPlanItemsToTemplate,
   saveTemplates,
   savePlans
 } from './storage.js';
@@ -25,6 +26,22 @@ const elements = {
   main: document.getElementById('app-main'),
   navButtons: Array.from(document.querySelectorAll('.nav-btn'))
 };
+
+function armDeleteButton(button, onConfirm) {
+  if (button.dataset.armed === 'true') {
+    onConfirm();
+    return;
+  }
+  const originalText = button.textContent;
+  button.dataset.armed = 'true';
+  button.textContent = 'Tap again to confirm';
+  setTimeout(() => {
+    if (button.dataset.armed === 'true') {
+      button.dataset.armed = 'false';
+      button.textContent = originalText;
+    }
+  }, 3000);
+}
 
 function initApp() {
   state.templates = loadTemplates();
@@ -99,7 +116,6 @@ function renderTemplatesList() {
     });
   }
 
-  fragment.getElementById('templates-list').replaceWith(listRoot);
   fragment.querySelector('[data-action="create-template"]').addEventListener('click', () => {
     state.activeTemplate = null;
     renderTemplateEditor();
@@ -308,10 +324,10 @@ function renderPlansList() {
 
   fragment.querySelectorAll('[data-action="delete-plan"]').forEach(button => {
     button.addEventListener('click', () => {
-      if (confirm('Delete this plan?')) {
+      armDeleteButton(button, () => {
         state.plans = deletePlan(button.dataset.id);
         renderPlansList();
-      }
+      });
     });
   });
 
@@ -498,22 +514,48 @@ function renderPlanDetail() {
     alert('Plan saved.');
   });
 
+  const tName = templateSource ? templateSource.name : 'template';
+  fragment.querySelector('[data-action="sync-plan"]').dataset.tooltip =
+    `Adds new items from "${tName}" that aren't in this plan yet`;
+  fragment.querySelector('[data-action="push-to-template"]').dataset.tooltip =
+    `Sends new items from this plan back to "${tName}"`;
+
   fragment.querySelector('[data-action="sync-plan"]').addEventListener('click', () => {
     if (!templateSource) {
       alert('Template source not available.');
       return;
     }
-    plan = syncPlanWithTemplate(plan, templateSource);
+    syncPlanWithTemplate(plan, templateSource);
     state.plans = updatePlan(plan);
     state.activePlan = plan;
     renderPlanDetail();
   });
 
-  fragment.querySelector('[data-action="delete-plan"]').addEventListener('click', () => {
-    if (confirm('Delete this plan?')) {
+  fragment.querySelector('[data-action="push-to-template"]').addEventListener('click', () => {
+    if (!templateSource) {
+      alert('Template source not available.');
+      return;
+    }
+    const result = pushPlanItemsToTemplate(plan, templateSource);
+    if (result.addedCount === 0) {
+      alert('No new items to add to the template.');
+      return;
+    }
+    const tIdx = state.templates.findIndex(t => t.id === result.template.id);
+    if (tIdx !== -1) state.templates[tIdx] = result.template;
+    saveTemplates(state.templates);
+    state.plans = updatePlan(result.plan);
+    state.activePlan = result.plan;
+    alert(`Added ${result.addedCount} item(s) to "${result.template.name}".`);
+    renderPlanDetail();
+  });
+
+  const deletePlanBtn = fragment.querySelector('[data-action="delete-plan"]');
+  deletePlanBtn.addEventListener('click', () => {
+    armDeleteButton(deletePlanBtn, () => {
       state.plans = deletePlan(plan.id);
       renderPlansList();
-    }
+    });
   });
 
   elements.main.innerHTML = '';
