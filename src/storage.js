@@ -1,11 +1,15 @@
 import { getSeedTemplates, saveTemplates, cleanTemplate, generateId } from './templates.js';
 
+// localStorage key where all packing plans are persisted as a JSON string.
 const PLAN_STORAGE_KEY = 'campfixer:plans';
 
+// Templates are managed by templates.js — this just delegates to keep concerns separate.
 function loadTemplates() {
   return getSeedTemplates();
 }
 
+// Returns all saved plans, or an empty array if storage is empty or the data is corrupt.
+// Troubleshooting: open DevTools → Application → Local Storage and check "campfixer:plans".
 function loadPlans() {
   const stored = localStorage.getItem(PLAN_STORAGE_KEY);
   if (!stored) {
@@ -23,6 +27,7 @@ function savePlans(plans) {
   localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plans));
 }
 
+// Creates a new template and prepends it so it appears first in the list.
 function createTemplate(template) {
   const templates = loadTemplates();
   const clean = cleanTemplate(template);
@@ -31,6 +36,8 @@ function createTemplate(template) {
   return clean;
 }
 
+// Replaces the matching template in storage and bumps its version number.
+// Version is used by plans to track whether a sync is needed.
 function updateTemplate(updatedTemplate) {
   const templates = loadTemplates();
   const index = templates.findIndex(t => t.id === updatedTemplate.id);
@@ -49,11 +56,14 @@ function deleteTemplate(templateId) {
   return templates;
 }
 
+// Converts a template into a new packing plan.
+// Each plan item records sourceTemplateId and sourceItemId so we can later detect
+// which template items are already represented in the plan (used by syncPlanWithTemplate).
 function createPlanFromTemplate(template, planName) {
   const items = (template.defaultItems || []).map(item => ({
     planItemId: generateId('plan'),
     sourceTemplateId: template.id,
-    sourceItemId: item.id,
+    sourceItemId: item.id,   // links this plan item back to its template item
     name: item.name,
     importance: item.importance,
     description: item.description,
@@ -72,6 +82,7 @@ function createPlanFromTemplate(template, planName) {
   };
 }
 
+// Prepends the new plan to storage and returns the full updated plans array.
 function addPlan(plan) {
   const plans = loadPlans();
   plans.unshift(plan);
@@ -79,6 +90,8 @@ function addPlan(plan) {
   return plans;
 }
 
+// Replaces the matching plan in storage (matched by id) and returns the full updated array.
+// Troubleshooting: if a save appears to do nothing, check that plan.id is set correctly.
 function updatePlan(plan) {
   const plans = loadPlans();
   const index = plans.findIndex(p => p.id === plan.id);
@@ -95,6 +108,11 @@ function deletePlan(planId) {
   return plans;
 }
 
+// Pushes new plan items back to the source template (plan → template direction).
+// "New" means the plan item has no sourceItemId (added manually) or its sourceItemId
+// no longer exists in the template (template item was deleted after the plan was created).
+// After pushing, the plan items are updated with the new template item IDs so a second
+// push won't create duplicates.
 function pushPlanItemsToTemplate(plan, template) {
   const existingIds = new Set(template.defaultItems.map(i => i.id));
   const itemsToAdd = plan.items.filter(
@@ -112,6 +130,8 @@ function pushPlanItemsToTemplate(plan, template) {
     weight: item.weight || ''
   }));
 
+  // Map from plan item's planItemId → the newly created template item id,
+  // so we can back-fill sourceItemId on the plan items below.
   const idMap = new Map(itemsToAdd.map((item, i) => [item.planItemId, newTemplateItems[i].id]));
 
   const updatedTemplate = {
@@ -121,6 +141,8 @@ function pushPlanItemsToTemplate(plan, template) {
     updatedAt: new Date().toISOString().split('T')[0]
   };
 
+  // Update the plan items that were just pushed so they're now linked to their
+  // template counterparts — prevents them from being pushed again next time.
   const updatedPlan = {
     ...plan,
     items: plan.items.map(item => {
@@ -134,6 +156,10 @@ function pushPlanItemsToTemplate(plan, template) {
   return { template: updatedTemplate, plan: updatedPlan, addedCount: newTemplateItems.length };
 }
 
+// Pulls new items from the template into the plan (template → plan direction).
+// Only adds items that don't already exist in the plan — identified by sourceItemId.
+// Does NOT update fields on existing plan items if the template item changed.
+// Mutates the plan object directly and also returns it.
 function syncPlanWithTemplate(plan, template) {
   const existingSourceIds = new Set(plan.items.map(item => item.sourceItemId).filter(Boolean));
   const newItems = (template.defaultItems || [])

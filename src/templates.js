@@ -1,3 +1,5 @@
+// Built-in starter template shown to new users on first launch.
+// Add more objects here to seed additional default templates.
 const DEFAULT_TEMPLATES = [
   {
     id: 'template-car-camping-1',
@@ -40,8 +42,10 @@ const DEFAULT_TEMPLATES = [
   }
 ];
 
+// localStorage key where all templates are persisted as a JSON string.
 const STORAGE_KEY = 'campfixer:templates';
 
+// Generates a short random ID with the given prefix, e.g. "item-x7k2a9b".
 function generateId(prefix = 'item') {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -54,6 +58,9 @@ function createDefaultTemplates() {
   return DEFAULT_TEMPLATES.map(cloneTemplate);
 }
 
+// Returns templates from localStorage, seeding defaults if storage is empty or corrupt.
+// Troubleshooting: if templates keep resetting, localStorage may be clearing between sessions
+// (private/incognito mode, or storage quota exceeded).
 function getSeedTemplates() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
@@ -69,6 +76,7 @@ function getSeedTemplates() {
     }
     return parsed;
   } catch (error) {
+    // Storage was present but unparseable — fall back to defaults.
     const seed = createDefaultTemplates();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
     return seed;
@@ -79,6 +87,7 @@ function saveTemplates(templates) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
 }
 
+// Fills in missing fields with safe defaults so old/incomplete saved data doesn't break the UI.
 function normalizeTemplateItem(item) {
   return {
     id: item.id || generateId('item'),
@@ -90,6 +99,7 @@ function normalizeTemplateItem(item) {
   };
 }
 
+// Returns a fully validated template object — used before saving to prevent bad shapes in storage.
 function cleanTemplate(template) {
   return {
     id: template.id || generateId('template'),

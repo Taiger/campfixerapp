@@ -14,19 +14,26 @@ import {
   savePlans
 } from './storage.js';
 
+// Central in-memory state. All renders read from here; storage functions keep
+// localStorage in sync. Never mutate state directly from event handlers —
+// always go through a storage function and reassign the returned value.
 const state = {
-  view: 'dashboard',
-  templates: [],
-  plans: [],
-  activeTemplate: null,
-  activePlan: null
+  view: 'dashboard',       // which top-level view is active
+  templates: [],           // full list of templates loaded from localStorage
+  plans: [],               // full list of plans loaded from localStorage
+  activeTemplate: null,    // template currently open in the editor (null = new)
+  activePlan: null         // plan currently open in the detail view
 };
 
+// Cached DOM references used across multiple renders.
 const elements = {
   main: document.getElementById('app-main'),
   navButtons: Array.from(document.querySelectorAll('.nav-btn'))
 };
 
+// Two-step delete guard: first click arms the button and changes its label;
+// second click (within 3 seconds) calls onConfirm. Resets automatically if not confirmed.
+// This replaces window.confirm() which can be silently suppressed in PWA/ChromeOS contexts.
 function armDeleteButton(button, onConfirm) {
   if (button.dataset.armed === 'true') {
     onConfirm();
@@ -59,6 +66,7 @@ function attachNavListeners() {
   });
 }
 
+// Highlights the nav button matching the active view.
 function setActiveNav(view) {
   elements.navButtons.forEach(button => {
     button.classList.toggle('active', button.dataset.view === view);
@@ -78,6 +86,9 @@ function renderView(view) {
   }
 }
 
+// Rendering pattern used throughout: clone a <template> element from the HTML,
+// wire up event listeners on the fragment, then swap it into #app-main.
+// This avoids rebuilding HTML strings in JS and keeps markup in index.html.
 function renderDashboard() {
   const template = document.getElementById('dashboard-template');
   const fragment = template.content.cloneNode(true);
@@ -117,7 +128,7 @@ function renderTemplatesList() {
   }
 
   fragment.querySelector('[data-action="create-template"]').addEventListener('click', () => {
-    state.activeTemplate = null;
+    state.activeTemplate = null; // null signals "new template" to the editor
     renderTemplateEditor();
   });
 
@@ -136,7 +147,7 @@ function renderTemplatesList() {
         const copy = JSON.parse(JSON.stringify(original));
         copy.id = `template-${Math.random().toString(36).slice(2, 9)}`;
         copy.name = `${original.name} copy`;
-        copy.version = 1;
+        copy.version = 1; // reset version — it's a new independent template
         state.templates.unshift(copy);
         saveTemplates(state.templates);
         renderTemplatesList();
@@ -154,6 +165,8 @@ function renderTemplateEditor() {
   const title = fragment.getElementById('template-editor-title');
   const form = fragment.getElementById('template-form');
   const itemsRoot = fragment.getElementById('template-items');
+
+  // Deep-clone so edits don't mutate state until the user explicitly saves.
   const currentTemplate = state.activeTemplate ? JSON.parse(JSON.stringify(state.activeTemplate)) : {
     name: '',
     description: '',
@@ -164,6 +177,8 @@ function renderTemplateEditor() {
   form.name.value = currentTemplate.name;
   form.description.value = currentTemplate.description;
 
+  // Rebuilds the item list from currentTemplate.defaultItems.
+  // Called after any add/remove so indices stay accurate.
   function renderItems() {
     itemsRoot.innerHTML = '';
     currentTemplate.defaultItems.forEach((item, index) => {
@@ -204,6 +219,8 @@ function renderTemplateEditor() {
     });
   }
 
+  // Writes a single field change into currentTemplate immediately on input,
+  // keeping the in-memory object in sync without re-rendering the whole list.
   function updateItem(event) {
     const index = Number(event.target.dataset.index);
     const field = event.target.dataset.field;
@@ -214,9 +231,11 @@ function renderTemplateEditor() {
   function removeItem(index) {
     currentTemplate.defaultItems.splice(index, 1);
     renderItems();
-    attachItemListeners();
+    attachItemListeners(); // re-attach because the DOM was rebuilt
   }
 
+  // Attaches input/change and remove listeners after each renderItems() call.
+  // Must be re-called whenever the list re-renders, since new DOM nodes lose old listeners.
   function attachItemListeners() {
     itemsRoot.querySelectorAll('[data-field]').forEach(input => {
       input.addEventListener('input', updateItem);
@@ -252,11 +271,14 @@ function renderTemplateEditor() {
     currentTemplate.name = form.name.value.trim() || 'Untitled template';
     currentTemplate.description = form.description.value.trim();
     if (!currentTemplate.id) {
+      // New template: assign a fresh id and prepend to the list.
       currentTemplate.id = `template-${Math.random().toString(36).slice(2, 9)}`;
       currentTemplate.version = 1;
       currentTemplate.updatedAt = new Date().toISOString().split('T')[0];
       state.templates.unshift(currentTemplate);
     } else {
+      // Existing template: find it by id and replace in-place, bumping the version.
+      // Plans use the version number to know when a sync is available.
       const index = state.templates.findIndex(t => t.id === currentTemplate.id);
       if (index !== -1) {
         currentTemplate.version = (state.templates[index].version || 1) + 1;
@@ -270,6 +292,7 @@ function renderTemplateEditor() {
 
   fragment.querySelector('[data-action="delete-template"]').addEventListener('click', () => {
     if (!currentTemplate.id) {
+      // Template was never saved — just navigate away.
       renderTemplatesList();
       return;
     }
@@ -294,6 +317,8 @@ function renderPlansList() {
   } else {
     emptyState.style.display = 'none';
     state.plans.forEach(plan => {
+      // Look up the source template by id for display purposes.
+      // Shows "Unknown" if the template was deleted after the plan was created.
       const templateSource = state.templates.find(t => t.id === plan.templateId);
       const card = document.createElement('div');
       card.className = 'item-card';
@@ -335,6 +360,9 @@ function renderPlansList() {
   elements.main.appendChild(fragment);
 }
 
+// Renders the "create plan" form. Built with createElement instead of a <template>
+// because it includes dynamic content (the template selector) that doesn't fit
+// a static HTML template cleanly.
 function renderPlanCreator() {
   const wrapper = document.createElement('div');
   wrapper.className = 'panel';
@@ -396,6 +424,8 @@ function renderPlanDetail() {
     return;
   }
 
+  // Deep-clone so in-flight edits don't affect state until the user hits Save.
+  // Troubleshooting: if edits appear to persist after Cancel, check this clone.
   const plan = JSON.parse(JSON.stringify(state.activePlan));
   const templateSource = state.templates.find(t => t.id === plan.templateId);
   const template = document.getElementById('plan-detail-template');
@@ -405,6 +435,8 @@ function renderPlanDetail() {
 
   const itemsRoot = fragment.getElementById('plan-items');
 
+  // Rebuilds the item list from plan.items. Called after any structural change
+  // (add, remove, toggle packed) to keep indices accurate.
   function renderItems() {
     itemsRoot.innerHTML = '';
     plan.items.forEach((item, index) => {
@@ -449,6 +481,7 @@ function renderPlanDetail() {
     });
   }
 
+  // Updates a single field on the in-memory plan item as the user types.
   function updateItem(event) {
     const index = Number(event.target.dataset.index);
     const field = event.target.dataset.field;
@@ -468,6 +501,7 @@ function renderPlanDetail() {
     attachItemListeners();
   }
 
+  // Must be re-called after every renderItems() because rebuilt DOM nodes lose listeners.
   function attachItemListeners() {
     itemsRoot.querySelectorAll('[data-field]').forEach(input => {
       input.addEventListener('input', updateItem);
@@ -486,6 +520,8 @@ function renderPlanDetail() {
     });
   }
 
+  // Manually added items have sourceItemId: null, marking them as not from a template.
+  // These are the items that "Push items to template" will send back.
   function addItem() {
     plan.items.push({
       planItemId: `plan-${Math.random().toString(36).slice(2, 9)}`,
@@ -514,12 +550,14 @@ function renderPlanDetail() {
     alert('Plan saved.');
   });
 
+  // Set tooltips dynamically so they can include the actual template name.
   const tName = templateSource ? templateSource.name : 'template';
   fragment.querySelector('[data-action="sync-plan"]').dataset.tooltip =
     `Adds new items from "${tName}" that aren't in this plan yet`;
   fragment.querySelector('[data-action="push-to-template"]').dataset.tooltip =
     `Sends new items from this plan back to "${tName}"`;
 
+  // Sync: template → plan. Adds any template items not yet in the plan.
   fragment.querySelector('[data-action="sync-plan"]').addEventListener('click', () => {
     if (!templateSource) {
       alert('Template source not available.');
@@ -531,6 +569,8 @@ function renderPlanDetail() {
     renderPlanDetail();
   });
 
+  // Push: plan → template. Sends manually added plan items back to the source template.
+  // After pushing, updates the plan items' sourceItemId so they won't be pushed again.
   fragment.querySelector('[data-action="push-to-template"]').addEventListener('click', () => {
     if (!templateSource) {
       alert('Template source not available.');
