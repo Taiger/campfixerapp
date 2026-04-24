@@ -6,41 +6,70 @@
   <title>Campfixer</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#1f2937" />
+  <meta name="theme-color" content="#0f172a" id="meta-theme-color" />
+
+  <!--
+    Apply the saved theme BEFORE the page renders to prevent a flash of the
+    wrong theme. Must run synchronously in <head>.
+    Falls back to the system preference if nothing is stored.
+  -->
+  <script>
+    (function () {
+      var stored = localStorage.getItem('campfixer:theme');
+      var sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (stored === 'dark' || (!stored && sysDark)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
 </head>
-<body>
-  <div class="app-shell">
-    <header class="app-header">
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+  <div class="max-w-4xl mx-auto px-4 py-4">
+
+    <header class="flex items-center justify-between gap-4 mb-4">
       <div>
-        <h1>Campfixer</h1>
-        <p>Plan car camping packing with templates and auto-sync updates.</p>
+        <h1 class="text-3xl font-bold tracking-tight">Campfixer</h1>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
+          Plan car camping packing with templates and auto-sync updates.
+        </p>
       </div>
-      <button id="open-menu" aria-label="Open navigation">☰</button>
+      <div class="flex items-center gap-2">
+        <button id="theme-toggle" class="btn-icon" aria-label="Toggle light/dark mode" title="Toggle theme">
+          <span id="theme-icon">🌙</span>
+        </button>
+        <!-- Hamburger: only visible on mobile; wired in main.js -->
+        <button id="open-menu" class="btn-icon md:hidden" aria-label="Open navigation">☰</button>
+      </div>
     </header>
 
-    <nav class="app-nav" id="app-nav">
+    <!-- Hidden on mobile by default. Hamburger adds .nav-open; md+ always shows via CSS. -->
+    <nav id="app-nav" class="flex-wrap gap-2 mb-4">
       <button class="nav-btn active" data-view="dashboard">Dashboard</button>
       <button class="nav-btn" data-view="templates">Templates</button>
       <button class="nav-btn" data-view="plans">Packing Plans</button>
     </nav>
 
-    <main id="app-main" class="app-main"></main>
+    <main id="app-main" class="min-h-96"></main>
   </div>
+
+  <!-- ─── View templates ──────────────────────────────────────────────── -->
 
   <template id="dashboard-template">
     <section class="panel">
-      <h2>Campfixer Dashboard</h2>
-      <p>Use templates to create custom car camping packing plans. Sync plans when you add new default items.</p>
+      <h2 class="text-xl font-semibold mb-1">Campfixer Dashboard</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm mb-5">
+        Use templates to create custom car camping packing plans. Sync plans when you add new default items.
+      </p>
       <div class="card-grid">
         <div class="card">
           <h3>Templates</h3>
-          <p>Manage your car camping templates and default pack items.</p>
-          <button data-action="goto" data-target="templates">Open Templates</button>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Manage your car camping templates and default pack items.</p>
+          <button data-action="goto" data-target="templates" class="btn-primary">Open Templates</button>
         </div>
         <div class="card">
           <h3>Packing Plans</h3>
-          <p>Create and sync plans from templates, then keep your packing list ready.</p>
-          <button data-action="goto" data-target="plans">Open Plans</button>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Create and sync plans from templates, then keep your packing list ready.</p>
+          <button data-action="goto" data-target="plans" class="btn-primary">Open Plans</button>
         </div>
       </div>
     </section>
@@ -49,19 +78,19 @@
   <template id="templates-list-template">
     <section class="panel">
       <div class="panel-header">
-        <h2>Templates</h2>
-        <button data-action="create-template">New template</button>
+        <h2 class="text-xl font-semibold">Templates</h2>
+        <button data-action="create-template" class="btn-primary">New template</button>
       </div>
       <div id="templates-list" class="list"></div>
-      <div class="empty-state" id="templates-empty">No templates found. Add one to get started.</div>
+      <p class="empty-state" id="templates-empty">No templates found. Add one to get started.</p>
     </section>
   </template>
 
   <template id="template-editor-template">
     <section class="panel">
       <div class="panel-header">
-        <button data-action="back-to-templates">← Back</button>
-        <h2 id="template-editor-title"></h2>
+        <button data-action="back-to-templates" class="btn-secondary">← Back</button>
+        <h2 id="template-editor-title" class="text-xl font-semibold"></h2>
       </div>
       <form id="template-form" class="form-grid">
         <label>
@@ -73,16 +102,14 @@
           <textarea name="description" rows="3"></textarea>
         </label>
       </form>
-      <div class="panel-section">
-        <div class="section-header">
-          <h3>Default items</h3>
-          <button data-action="add-item">Add item</button>
-        </div>
-        <div id="template-items" class="list"></div>
+      <div class="section-header mt-6 mb-1">
+        <h3 class="font-semibold text-slate-900 dark:text-slate-100">Default items</h3>
+        <button data-action="add-item" class="btn-secondary">+ Add item</button>
       </div>
+      <div id="template-items" class="list"></div>
       <div class="form-actions">
-        <button data-action="save-template">Save template</button>
-        <button data-action="delete-template" class="danger">Delete template</button>
+        <button data-action="save-template" class="btn-primary">Save template</button>
+        <button data-action="delete-template" class="btn-danger">Delete template</button>
       </div>
     </section>
   </template>
@@ -90,35 +117,33 @@
   <template id="plans-list-template">
     <section class="panel">
       <div class="panel-header">
-        <h2>Packing Plans</h2>
-        <button data-action="create-plan">New packing plan</button>
+        <h2 class="text-xl font-semibold">Packing Plans</h2>
+        <button data-action="create-plan" class="btn-primary">New packing plan</button>
       </div>
       <div id="plans-list" class="list"></div>
-      <div class="empty-state" id="plans-empty">No plans created yet. Create one from a template.</div>
+      <p class="empty-state" id="plans-empty">No plans created yet. Create one from a template.</p>
     </section>
   </template>
 
   <template id="plan-detail-template">
     <section class="panel">
       <div class="panel-header">
-        <button data-action="back-to-plans">← Back</button>
+        <button data-action="back-to-plans" class="btn-secondary">← Back</button>
         <div>
-          <h2 id="plan-title"></h2>
-          <p id="plan-from-template"></p>
+          <h2 id="plan-title" class="text-xl font-semibold"></h2>
+          <p id="plan-from-template" class="text-sm text-slate-500 dark:text-slate-400"></p>
         </div>
       </div>
-      <div class="panel-section">
-        <div class="section-header">
-          <h3>Packing items</h3>
-          <button data-action="add-plan-item">Add item</button>
-        </div>
-        <div id="plan-items" class="list"></div>
+      <div class="section-header mb-1">
+        <h3 class="font-semibold text-slate-900 dark:text-slate-100">Packing items</h3>
+        <button data-action="add-plan-item" class="btn-secondary">+ Add item</button>
       </div>
+      <div id="plan-items" class="list"></div>
       <div class="form-actions">
-        <button data-action="sync-plan">Sync with template</button>
-        <button data-action="push-to-template">Push items to template</button>
-        <button data-action="save-plan">Save plan</button>
-        <button data-action="delete-plan" class="danger">Delete plan</button>
+        <button data-action="sync-plan" class="btn-sync">Sync with template</button>
+        <button data-action="push-to-template" class="btn-push">Push items to template</button>
+        <button data-action="save-plan" class="btn-primary">Save plan</button>
+        <button data-action="delete-plan" class="btn-danger">Delete plan</button>
       </div>
     </section>
   </template>

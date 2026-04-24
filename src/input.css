@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+    font-family: Inter, system-ui, sans-serif;
+  }
+
+  /* Form controls inherit the right background and text for both themes. */
+  input, textarea, select {
+    @apply w-full rounded-xl border border-slate-200 dark:border-slate-600
+           bg-white dark:bg-slate-900 px-3 py-2 text-sm
+           text-slate-900 dark:text-slate-100
+           transition-colors duration-150;
+    font: inherit;
+  }
+  input:focus, textarea:focus, select:focus {
+    @apply outline-none ring-2 ring-sky-400 dark:ring-sky-500 border-transparent;
+  }
+
+  label {
+    @apply flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-300;
+  }
+
+  /* Scoped text styles for dynamically generated item cards. */
+  .item-card strong { @apply block font-semibold mb-1 text-slate-900 dark:text-slate-100; }
+  .item-card p      { @apply text-sm text-slate-500 dark:text-slate-400 my-0.5; }
+  .item-card small  { @apply text-xs text-slate-400 dark:text-slate-500; }
+}
+
+@layer components {
+
+  /* ─── Buttons ──────────────────────────────────────────────────── */
+  /*
+   * Each btn-* variant is fully self-contained (no @apply of other component
+   * classes) because Tailwind v3 does not resolve @apply chains between
+   * user-defined component classes at build time.
+   */
+
+  /* Primary action: Save, Create, Open */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-sky-500 text-white hover:bg-sky-600;
+    font: inherit;
+  }
+
+  /* Secondary / navigation: Back, Edit, Duplicate */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-slate-200 text-slate-800 hover:bg-slate-300
+           dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600;
+    font: inherit;
+  }
+
+  /* Destructive: Delete */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-red-500 text-white hover:bg-red-600;
+    font: inherit;
+  }
+
+  /* Armed state: first tap — switches to amber to signal "tap again to confirm" */
+  .btn-danger-armed {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-amber-400 text-slate-900 hover:bg-amber-500;
+    font: inherit;
+  }
+
+  /* Sync: template → plan */
+  .btn-sync {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-emerald-500 text-white hover:bg-emerald-600;
+    font: inherit;
+  }
+
+  /* Push: plan → template */
+  .btn-push {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-violet-500 text-white hover:bg-violet-600;
+    font: inherit;
+  }
+
+  /* Small square icon buttons: theme toggle, hamburger */
+  .btn-icon {
+    @apply flex h-9 w-9 items-center justify-center rounded-full text-base
+           border-0 cursor-pointer select-none transition-colors duration-150
+           bg-slate-200 text-slate-800 hover:bg-slate-300
+           dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600;
+    font: inherit;
+  }
+
+  /* ─── Nav ──────────────────────────────────────────────────────── */
+
+  .nav-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full
+           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+           transition-all duration-150 active:scale-95
+           bg-slate-200 text-slate-700 hover:bg-slate-300
+           dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700;
+    font: inherit;
+  }
+  .nav-btn.active {
+    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
+  }
+
+  /* Hidden on mobile by default; hamburger adds .nav-open to reveal it.
+     On md+ screens it's always visible via the md:flex media query. */
+  #app-nav          { @apply hidden md:flex; }
+  #app-nav.nav-open { @apply flex; }
+
+  /* ─── Tooltips ─────────────────────────────────────────────────── */
+
+  [data-tooltip] { @apply relative; }
+  [data-tooltip]::after {
+    content: attr(data-tooltip);
+    @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5
+           rounded-xl text-xs whitespace-nowrap pointer-events-none opacity-0
+           bg-slate-100 text-slate-600 border border-slate-200
+           dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600
+           transition-opacity duration-150 z-10;
+  }
+  [data-tooltip]:hover::after { @apply opacity-100; }
+
+  /* ─── Layout ───────────────────────────────────────────────────── */
+
+  .panel {
+    @apply rounded-2xl border border-slate-200 dark:border-slate-700
+           bg-white dark:bg-slate-800 p-6 shadow-xl;
+  }
+  .panel-header  { @apply flex items-center gap-3 mb-5 flex-wrap; }
+  .section-header { @apply flex items-center justify-between gap-2; }
+  .form-grid     { @apply grid gap-4; }
+  .form-actions  { @apply flex flex-wrap gap-3 mt-6; }
+  .card-grid     { @apply grid gap-4 sm:grid-cols-2; }
+  .card {
+    @apply rounded-xl border border-slate-200 dark:border-slate-700
+           bg-slate-50 dark:bg-slate-700/50 p-5;
+  }
+  .card h3 { @apply font-semibold mt-0 mb-1 text-slate-900 dark:text-slate-100; }
+  .list    { @apply grid gap-3 mt-3; }
+  .item-card {
+    @apply rounded-xl border border-slate-200 dark:border-slate-700
+           bg-slate-50 dark:bg-slate-700/50 p-4;
+  }
+  .card-actions  { @apply flex flex-wrap gap-2 mt-3; }
+  .inline-fields { @apply grid grid-cols-2 gap-3; }
+  .empty-state   { @apply mt-4 text-sm text-slate-500 dark:text-slate-400; }
+}
+
+@layer utilities {
+  @media (max-width: 480px) {
+    .inline-fields { grid-template-columns: 1fr; }
+  }
+}

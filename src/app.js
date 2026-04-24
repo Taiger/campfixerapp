@@ -31,9 +31,9 @@ const elements = {
   navButtons: Array.from(document.querySelectorAll('.nav-btn'))
 };
 
-// Two-step delete guard: first click arms the button and changes its label;
-// second click (within 3 seconds) calls onConfirm. Resets automatically if not confirmed.
-// This replaces window.confirm() which can be silently suppressed in PWA/ChromeOS contexts.
+// Two-step delete guard: first click arms the button (amber, "Tap again to confirm");
+// second click within 3 seconds calls onConfirm. Resets automatically if not confirmed.
+// Uses class toggling instead of CSS attribute selectors so Tailwind styles apply correctly.
 function armDeleteButton(button, onConfirm) {
   if (button.dataset.armed === 'true') {
     onConfirm();
@@ -42,10 +42,12 @@ function armDeleteButton(button, onConfirm) {
   const originalText = button.textContent;
   button.dataset.armed = 'true';
   button.textContent = 'Tap again to confirm';
+  button.classList.replace('btn-danger', 'btn-danger-armed');
   setTimeout(() => {
     if (button.dataset.armed === 'true') {
       button.dataset.armed = 'false';
       button.textContent = originalText;
+      button.classList.replace('btn-danger-armed', 'btn-danger');
     }
   }, 3000);
 }
@@ -119,8 +121,8 @@ function renderTemplatesList() {
         <p>${templateData.description}</p>
         <small>${templateData.defaultItems.length} default item(s)</small>
         <div class="card-actions">
-          <button data-action="edit-template" data-id="${templateData.id}">Edit</button>
-          <button data-action="copy-template" data-id="${templateData.id}">Duplicate</button>
+          <button data-action="edit-template" data-id="${templateData.id}" class="btn-secondary">Edit</button>
+          <button data-action="copy-template" data-id="${templateData.id}" class="btn-secondary">Duplicate</button>
         </div>
       `;
       listRoot.appendChild(card);
@@ -178,12 +180,13 @@ function renderTemplateEditor() {
   form.description.value = currentTemplate.description;
 
   // Rebuilds the item list from currentTemplate.defaultItems.
-  // Called after any add/remove so indices stay accurate.
-  function renderItems() {
+  // Pass animateNewItem=true to fade-in and scroll to the last card (used by addItem).
+  function renderItems(animateNewItem = false) {
     itemsRoot.innerHTML = '';
     currentTemplate.defaultItems.forEach((item, index) => {
+      const isNew = animateNewItem && index === currentTemplate.defaultItems.length - 1;
       const card = document.createElement('div');
-      card.className = 'item-card';
+      card.className = 'item-card' + (isNew ? ' animate-fade-in' : '');
       card.innerHTML = `
         <label>
           Item name
@@ -212,10 +215,11 @@ function renderTemplateEditor() {
           </label>
         </div>
         <div class="card-actions">
-          <button data-action="remove-item" data-index="${index}">Remove</button>
+          <button data-action="remove-item" data-index="${index}" class="btn-danger">Remove</button>
         </div>
       `;
       itemsRoot.appendChild(card);
+      if (isNew) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
 
@@ -257,7 +261,7 @@ function renderTemplateEditor() {
       size: '',
       weight: ''
     });
-    renderItems();
+    renderItems(true); // true = animate + scroll to new card
     attachItemListeners();
   }
 
@@ -327,8 +331,8 @@ function renderPlansList() {
         <p>From template: ${templateSource ? templateSource.name : 'Unknown'}</p>
         <small>${plan.items.length} item(s)</small>
         <div class="card-actions">
-          <button data-action="open-plan" data-id="${plan.id}">Open</button>
-          <button data-action="delete-plan" data-id="${plan.id}">Delete</button>
+          <button data-action="open-plan" data-id="${plan.id}" class="btn-primary">Open</button>
+          <button data-action="delete-plan" data-id="${plan.id}" class="btn-danger">Delete</button>
         </div>
       `;
       listRoot.appendChild(card);
@@ -361,15 +365,14 @@ function renderPlansList() {
 }
 
 // Renders the "create plan" form. Built with createElement instead of a <template>
-// because it includes dynamic content (the template selector) that doesn't fit
-// a static HTML template cleanly.
+// because it includes dynamic content (the template selector).
 function renderPlanCreator() {
   const wrapper = document.createElement('div');
   wrapper.className = 'panel';
   wrapper.innerHTML = `
     <div class="panel-header">
-      <button id="back-to-plans">← Back</button>
-      <h2>Create packing plan</h2>
+      <button id="back-to-plans" class="btn-secondary">← Back</button>
+      <h2 class="text-xl font-semibold">Create packing plan</h2>
     </div>
     <form class="form-grid" id="create-plan-form">
       <label>
@@ -382,7 +385,7 @@ function renderPlanCreator() {
       </label>
     </form>
     <div class="form-actions">
-      <button id="save-plan">Create plan</button>
+      <button id="save-plan" class="btn-primary">Create plan</button>
     </div>
   `;
 
@@ -435,13 +438,15 @@ function renderPlanDetail() {
 
   const itemsRoot = fragment.getElementById('plan-items');
 
-  // Rebuilds the item list from plan.items. Called after any structural change
-  // (add, remove, toggle packed) to keep indices accurate.
-  function renderItems() {
+  // Rebuilds the item list from plan.items. Pass animateNewItem=true when called from
+  // addItem() to fade-in and scroll to the last card.
+  function renderItems(animateNewItem = false) {
     itemsRoot.innerHTML = '';
     plan.items.forEach((item, index) => {
+      const isNew = animateNewItem && index === plan.items.length - 1;
       const card = document.createElement('div');
-      card.className = 'item-card';
+      card.className = 'item-card' + (isNew ? ' animate-fade-in' : '');
+      if (item.packed) card.classList.add('opacity-60');
       card.innerHTML = `
         <label>
           Item name
@@ -470,14 +475,14 @@ function renderPlanDetail() {
           </label>
         </div>
         <div class="card-actions">
-          <button data-action="toggle-packed" data-index="${index}">${item.packed ? 'Unpack' : 'Packed'}</button>
-          <button data-action="remove-item" data-index="${index}">Remove</button>
+          <button data-action="toggle-packed" data-index="${index}" class="btn-secondary">
+            ${item.packed ? 'Unpack' : 'Pack'}
+          </button>
+          <button data-action="remove-item" data-index="${index}" class="btn-danger">Remove</button>
         </div>
       `;
-      if (item.packed) {
-        card.style.opacity = '0.85';
-      }
       itemsRoot.appendChild(card);
+      if (isNew) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
 
@@ -534,7 +539,7 @@ function renderPlanDetail() {
       weight: '',
       packed: false
     });
-    renderItems();
+    renderItems(true); // true = animate + scroll to new card
     attachItemListeners();
   }
 

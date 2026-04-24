@@ -4,7 +4,12 @@
   "description": "A small progressive web app for car camping packing plans.",
   "type": "module",
   "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./style.css",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./style.css --watch",
     "start": "python3 -m http.server 8000",
     "check": "node --check src/main.js src/app.js src/storage.js src/templates.js src/service-worker.js"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0"
   }
 }
