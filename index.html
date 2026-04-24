@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campfixer</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1f2937" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div>
+        <h1>Campfixer</h1>
+        <p>Plan car camping packing with templates and auto-sync updates.</p>
+      </div>
+      <button id="open-menu" aria-label="Open navigation">☰</button>
+    </header>
+
+    <nav class="app-nav" id="app-nav">
+      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+      <button class="nav-btn" data-view="templates">Templates</button>
+      <button class="nav-btn" data-view="plans">Packing Plans</button>
+    </nav>
+
+    <main id="app-main" class="app-main"></main>
+  </div>
+
+  <template id="dashboard-template">
+    <section class="panel">
+      <h2>Campfixer Dashboard</h2>
+      <p>Use templates to create custom car camping packing plans. Sync plans when you add new default items.</p>
+      <div class="card-grid">
+        <div class="card">
+          <h3>Templates</h3>
+          <p>Manage your car camping templates and default pack items.</p>
+          <button data-action="goto" data-target="templates">Open Templates</button>
+        </div>
+        <div class="card">
+          <h3>Packing Plans</h3>
+          <p>Create and sync plans from templates, then keep your packing list ready.</p>
+          <button data-action="goto" data-target="plans">Open Plans</button>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <template id="templates-list-template">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Templates</h2>
+        <button data-action="create-template">New template</button>
+      </div>
+      <div id="templates-list" class="list"></div>
+      <div class="empty-state" id="templates-empty">No templates found. Add one to get started.</div>
+    </section>
+  </template>
+
+  <template id="template-editor-template">
+    <section class="panel">
+      <div class="panel-header">
+        <button data-action="back-to-templates">← Back</button>
+        <h2 id="template-editor-title"></h2>
+      </div>
+      <form id="template-form" class="form-grid">
+        <label>
+          Template name
+          <input type="text" name="name" required />
+        </label>
+        <label>
+          Description
+          <textarea name="description" rows="3"></textarea>
+        </label>
+      </form>
+      <div class="panel-section">
+        <div class="section-header">
+          <h3>Default items</h3>
+          <button data-action="add-item">Add item</button>
+        </div>
+        <div id="template-items" class="list"></div>
+      </div>
+      <div class="form-actions">
+        <button data-action="save-template">Save template</button>
+        <button data-action="delete-template" class="danger">Delete template</button>
+      </div>
+    </section>
+  </template>
+
+  <template id="plans-list-template">
+    <section class="panel">
+      <div class="panel-header">
+        <h2>Packing Plans</h2>
+        <button data-action="create-plan">New packing plan</button>
+      </div>
+      <div id="plans-list" class="list"></div>
+      <div class="empty-state" id="plans-empty">No plans created yet. Create one from a template.</div>
+    </section>
+  </template>
+
+  <template id="plan-detail-template">
+    <section class="panel">
+      <div class="panel-header">
+        <button data-action="back-to-plans">← Back</button>
+        <div>
+          <h2 id="plan-title"></h2>
+          <p id="plan-from-template"></p>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-header">
+          <h3>Packing items</h3>
+          <button data-action="add-plan-item">Add item</button>
+        </div>
+        <div id="plan-items" class="list"></div>
+      </div>
+      <div class="form-actions">
+        <button data-action="sync-plan">Sync with template</button>
+        <button data-action="save-plan">Save plan</button>
+        <button data-action="delete-plan" class="danger">Delete plan</button>
+      </div>
+    </section>
+  </template>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

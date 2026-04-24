@@ -1,0 +1,10 @@
+{
+  "name": "campfixer",
+  "version": "0.1.0",
+  "description": "A small progressive web app for car camping packing plans.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "check": "node --check src/main.js src/app.js src/storage.js src/templates.js src/service-worker.js"
+  }
+}

@@ -1,0 +1,523 @@
+import {
+  loadTemplates,
+  loadPlans,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  createPlanFromTemplate,
+  addPlan,
+  updatePlan,
+  deletePlan,
+  syncPlanWithTemplate,
+  saveTemplates,
+  savePlans
+} from './storage.js';
+
+const state = {
+  view: 'dashboard',
+  templates: [],
+  plans: [],
+  activeTemplate: null,
+  activePlan: null
+};
+
+const elements = {
+  main: document.getElementById('app-main'),
+  navButtons: Array.from(document.querySelectorAll('.nav-btn'))
+};
+
+function initApp() {
+  state.templates = loadTemplates();
+  state.plans = loadPlans();
+  attachNavListeners();
+  renderView('dashboard');
+}
+
+function attachNavListeners() {
+  elements.navButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const view = button.dataset.view;
+      renderView(view);
+    });
+  });
+}
+
+function setActiveNav(view) {
+  elements.navButtons.forEach(button => {
+    button.classList.toggle('active', button.dataset.view === view);
+  });
+}
+
+function renderView(view) {
+  state.view = view;
+  setActiveNav(view);
+
+  if (view === 'dashboard') {
+    renderDashboard();
+  } else if (view === 'templates') {
+    renderTemplatesList();
+  } else if (view === 'plans') {
+    renderPlansList();
+  }
+}
+
+function renderDashboard() {
+  const template = document.getElementById('dashboard-template');
+  const fragment = template.content.cloneNode(true);
+  fragment.querySelectorAll('[data-action="goto"]').forEach(button => {
+    button.addEventListener('click', event => {
+      renderView(event.target.dataset.target);
+    });
+  });
+  elements.main.innerHTML = '';
+  elements.main.appendChild(fragment);
+}
+
+function renderTemplatesList() {
+  const template = document.getElementById('templates-list-template');
+  const fragment = template.content.cloneNode(true);
+  const listRoot = fragment.getElementById('templates-list');
+  const emptyState = fragment.getElementById('templates-empty');
+
+  if (state.templates.length === 0) {
+    emptyState.style.display = 'block';
+  } else {
+    emptyState.style.display = 'none';
+    state.templates.forEach(templateData => {
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      card.innerHTML = `
+        <strong>${templateData.name}</strong>
+        <p>${templateData.description}</p>
+        <small>${templateData.defaultItems.length} default item(s)</small>
+        <div class="card-actions">
+          <button data-action="edit-template" data-id="${templateData.id}">Edit</button>
+          <button data-action="copy-template" data-id="${templateData.id}">Duplicate</button>
+        </div>
+      `;
+      listRoot.appendChild(card);
+    });
+  }
+
+  fragment.getElementById('templates-list').replaceWith(listRoot);
+  fragment.querySelector('[data-action="create-template"]').addEventListener('click', () => {
+    state.activeTemplate = null;
+    renderTemplateEditor();
+  });
+
+  fragment.querySelectorAll('[data-action="edit-template"]').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = button.dataset.id;
+      state.activeTemplate = state.templates.find(t => t.id === id) || null;
+      renderTemplateEditor();
+    });
+  });
+
+  fragment.querySelectorAll('[data-action="copy-template"]').forEach(button => {
+    button.addEventListener('click', () => {
+      const original = state.templates.find(t => t.id === button.dataset.id);
+      if (original) {
+        const copy = JSON.parse(JSON.stringify(original));
+        copy.id = `template-${Math.random().toString(36).slice(2, 9)}`;
+        copy.name = `${original.name} copy`;
+        copy.version = 1;
+        state.templates.unshift(copy);
+        saveTemplates(state.templates);
+        renderTemplatesList();
+      }
+    });
+  });
+
+  elements.main.innerHTML = '';
+  elements.main.appendChild(fragment);
+}
+
+function renderTemplateEditor() {
+  const template = document.getElementById('template-editor-template');
+  const fragment = template.content.cloneNode(true);
+  const title = fragment.getElementById('template-editor-title');
+  const form = fragment.getElementById('template-form');
+  const itemsRoot = fragment.getElementById('template-items');
+  const currentTemplate = state.activeTemplate ? JSON.parse(JSON.stringify(state.activeTemplate)) : {
+    name: '',
+    description: '',
+    defaultItems: []
+  };
+
+  title.textContent = currentTemplate.name ? `Edit template: ${currentTemplate.name}` : 'New template';
+  form.name.value = currentTemplate.name;
+  form.description.value = currentTemplate.description;
+
+  function renderItems() {
+    itemsRoot.innerHTML = '';
+    currentTemplate.defaultItems.forEach((item, index) => {
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      card.innerHTML = `
+        <label>
+          Item name
+          <input value="${item.name}" data-field="name" data-index="${index}" />
+        </label>
+        <label>
+          Importance
+          <select data-field="importance" data-index="${index}">
+            <option${item.importance === 'High' ? ' selected' : ''}>High</option>
+            <option${item.importance === 'Medium' ? ' selected' : ''}>Medium</option>
+            <option${item.importance === 'Low' ? ' selected' : ''}>Low</option>
+          </select>
+        </label>
+        <label>
+          Description
+          <textarea data-field="description" data-index="${index}">${item.description}</textarea>
+        </label>
+        <div class="inline-fields">
+          <label>
+            Size
+            <input value="${item.size}" data-field="size" data-index="${index}" />
+          </label>
+          <label>
+            Weight
+            <input value="${item.weight}" data-field="weight" data-index="${index}" />
+          </label>
+        </div>
+        <div class="card-actions">
+          <button data-action="remove-item" data-index="${index}">Remove</button>
+        </div>
+      `;
+      itemsRoot.appendChild(card);
+    });
+  }
+
+  function updateItem(event) {
+    const index = Number(event.target.dataset.index);
+    const field = event.target.dataset.field;
+    if (Number.isNaN(index) || !field) return;
+    currentTemplate.defaultItems[index][field] = event.target.value;
+  }
+
+  function removeItem(index) {
+    currentTemplate.defaultItems.splice(index, 1);
+    renderItems();
+    attachItemListeners();
+  }
+
+  function attachItemListeners() {
+    itemsRoot.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', updateItem);
+    });
+    itemsRoot.querySelectorAll('[data-action="remove-item"]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        removeItem(Number(button.dataset.index));
+      });
+    });
+  }
+
+  function addItem() {
+    currentTemplate.defaultItems.push({
+      id: `item-${Math.random().toString(36).slice(2, 9)}`,
+      name: 'New item',
+      importance: 'Medium',
+      description: '',
+      size: '',
+      weight: ''
+    });
+    renderItems();
+    attachItemListeners();
+  }
+
+  renderItems();
+  attachItemListeners();
+
+  fragment.querySelector('[data-action="add-item"]').addEventListener('click', addItem);
+  fragment.querySelector('[data-action="back-to-templates"]').addEventListener('click', () => renderTemplatesList());
+
+  fragment.querySelector('[data-action="save-template"]').addEventListener('click', () => {
+    currentTemplate.name = form.name.value.trim() || 'Untitled template';
+    currentTemplate.description = form.description.value.trim();
+    if (!currentTemplate.id) {
+      currentTemplate.id = `template-${Math.random().toString(36).slice(2, 9)}`;
+      currentTemplate.version = 1;
+      currentTemplate.updatedAt = new Date().toISOString().split('T')[0];
+      state.templates.unshift(currentTemplate);
+    } else {
+      const index = state.templates.findIndex(t => t.id === currentTemplate.id);
+      if (index !== -1) {
+        currentTemplate.version = (state.templates[index].version || 1) + 1;
+        currentTemplate.updatedAt = new Date().toISOString().split('T')[0];
+        state.templates[index] = currentTemplate;
+      }
+    }
+    saveTemplates(state.templates);
+    renderTemplatesList();
+  });
+
+  fragment.querySelector('[data-action="delete-template"]').addEventListener('click', () => {
+    if (!currentTemplate.id) {
+      renderTemplatesList();
+      return;
+    }
+    if (confirm('Delete this template?')) {
+      state.templates = deleteTemplate(currentTemplate.id);
+      renderTemplatesList();
+    }
+  });
+
+  elements.main.innerHTML = '';
+  elements.main.appendChild(fragment);
+}
+
+function renderPlansList() {
+  const template = document.getElementById('plans-list-template');
+  const fragment = template.content.cloneNode(true);
+  const listRoot = fragment.getElementById('plans-list');
+  const emptyState = fragment.getElementById('plans-empty');
+
+  if (state.plans.length === 0) {
+    emptyState.style.display = 'block';
+  } else {
+    emptyState.style.display = 'none';
+    state.plans.forEach(plan => {
+      const templateSource = state.templates.find(t => t.id === plan.templateId);
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      card.innerHTML = `
+        <strong>${plan.name}</strong>
+        <p>From template: ${templateSource ? templateSource.name : 'Unknown'}</p>
+        <small>${plan.items.length} item(s)</small>
+        <div class="card-actions">
+          <button data-action="open-plan" data-id="${plan.id}">Open</button>
+          <button data-action="delete-plan" data-id="${plan.id}">Delete</button>
+        </div>
+      `;
+      listRoot.appendChild(card);
+    });
+  }
+
+  fragment.querySelector('[data-action="create-plan"]').addEventListener('click', () => {
+    renderPlanCreator();
+  });
+
+  fragment.querySelectorAll('[data-action="open-plan"]').forEach(button => {
+    button.addEventListener('click', () => {
+      const planId = button.dataset.id;
+      state.activePlan = state.plans.find(p => p.id === planId) || null;
+      renderPlanDetail();
+    });
+  });
+
+  fragment.querySelectorAll('[data-action="delete-plan"]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (confirm('Delete this plan?')) {
+        state.plans = deletePlan(button.dataset.id);
+        renderPlansList();
+      }
+    });
+  });
+
+  elements.main.innerHTML = '';
+  elements.main.appendChild(fragment);
+}
+
+function renderPlanCreator() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'panel';
+  wrapper.innerHTML = `
+    <div class="panel-header">
+      <button id="back-to-plans">← Back</button>
+      <h2>Create packing plan</h2>
+    </div>
+    <form class="form-grid" id="create-plan-form">
+      <label>
+        Plan name
+        <input name="planName" type="text" placeholder="My weekend trip" required />
+      </label>
+      <label>
+        Choose template
+        <select name="templateId"></select>
+      </label>
+    </form>
+    <div class="form-actions">
+      <button id="save-plan">Create plan</button>
+    </div>
+  `;
+
+  const select = wrapper.querySelector('select[name="templateId"]');
+  state.templates.forEach(template => {
+    const option = document.createElement('option');
+    option.value = template.id;
+    option.textContent = template.name;
+    select.appendChild(option);
+  });
+
+  wrapper.querySelector('#back-to-plans').addEventListener('click', () => renderPlansList());
+  wrapper.querySelector('#save-plan').addEventListener('click', event => {
+    event.preventDefault();
+    const planName = wrapper.querySelector('input[name="planName"]').value.trim();
+    const templateId = select.value;
+    if (!planName) {
+      alert('Please enter a plan name.');
+      return;
+    }
+    const template = state.templates.find(t => t.id === templateId);
+    if (!template) {
+      alert('Please choose a valid template.');
+      return;
+    }
+    const plan = createPlanFromTemplate(template, planName);
+    state.plans = addPlan(plan);
+    state.activePlan = plan;
+    renderPlanDetail();
+  });
+
+  elements.main.innerHTML = '';
+  elements.main.appendChild(wrapper);
+}
+
+function renderPlanDetail() {
+  if (!state.activePlan) {
+    renderPlansList();
+    return;
+  }
+
+  const plan = JSON.parse(JSON.stringify(state.activePlan));
+  const templateSource = state.templates.find(t => t.id === plan.templateId);
+  const template = document.getElementById('plan-detail-template');
+  const fragment = template.content.cloneNode(true);
+  fragment.getElementById('plan-title').textContent = plan.name;
+  fragment.getElementById('plan-from-template').textContent = `From template: ${templateSource ? templateSource.name : 'Unknown'}`;
+
+  const itemsRoot = fragment.getElementById('plan-items');
+
+  function renderItems() {
+    itemsRoot.innerHTML = '';
+    plan.items.forEach((item, index) => {
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      card.innerHTML = `
+        <label>
+          Item name
+          <input value="${item.name}" data-field="name" data-index="${index}" />
+        </label>
+        <label>
+          Importance
+          <select data-field="importance" data-index="${index}">
+            <option${item.importance === 'High' ? ' selected' : ''}>High</option>
+            <option${item.importance === 'Medium' ? ' selected' : ''}>Medium</option>
+            <option${item.importance === 'Low' ? ' selected' : ''}>Low</option>
+          </select>
+        </label>
+        <label>
+          Description
+          <textarea data-field="description" data-index="${index}">${item.description}</textarea>
+        </label>
+        <div class="inline-fields">
+          <label>
+            Size
+            <input value="${item.size}" data-field="size" data-index="${index}" />
+          </label>
+          <label>
+            Weight
+            <input value="${item.weight}" data-field="weight" data-index="${index}" />
+          </label>
+        </div>
+        <div class="card-actions">
+          <button data-action="toggle-packed" data-index="${index}">${item.packed ? 'Unpack' : 'Packed'}</button>
+          <button data-action="remove-item" data-index="${index}">Remove</button>
+        </div>
+      `;
+      if (item.packed) {
+        card.style.opacity = '0.85';
+      }
+      itemsRoot.appendChild(card);
+    });
+  }
+
+  function updateItem(event) {
+    const index = Number(event.target.dataset.index);
+    const field = event.target.dataset.field;
+    if (Number.isNaN(index) || !field) return;
+    plan.items[index][field] = event.target.value;
+  }
+
+  function removeItem(index) {
+    plan.items.splice(index, 1);
+    renderItems();
+    attachItemListeners();
+  }
+
+  function togglePacked(index) {
+    plan.items[index].packed = !plan.items[index].packed;
+    renderItems();
+    attachItemListeners();
+  }
+
+  function attachItemListeners() {
+    itemsRoot.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', updateItem);
+    });
+    itemsRoot.querySelectorAll('[data-action="remove-item"]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        removeItem(Number(button.dataset.index));
+      });
+    });
+    itemsRoot.querySelectorAll('[data-action="toggle-packed"]').forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        togglePacked(Number(button.dataset.index));
+      });
+    });
+  }
+
+  function addItem() {
+    plan.items.push({
+      planItemId: `plan-${Math.random().toString(36).slice(2, 9)}`,
+      sourceTemplateId: null,
+      sourceItemId: null,
+      name: 'New item',
+      importance: 'Medium',
+      description: '',
+      size: '',
+      weight: '',
+      packed: false
+    });
+    renderItems();
+    attachItemListeners();
+  }
+
+  renderItems();
+  attachItemListeners();
+
+  fragment.querySelector('[data-action="back-to-plans"]').addEventListener('click', () => renderPlansList());
+  fragment.querySelector('[data-action="add-plan-item"]').addEventListener('click', addItem);
+  fragment.querySelector('[data-action="save-plan"]').addEventListener('click', () => {
+    plan.name = document.getElementById('plan-title').textContent;
+    state.plans = updatePlan(plan);
+    state.activePlan = plan;
+    alert('Plan saved.');
+  });
+
+  fragment.querySelector('[data-action="sync-plan"]').addEventListener('click', () => {
+    if (!templateSource) {
+      alert('Template source not available.');
+      return;
+    }
+    plan = syncPlanWithTemplate(plan, templateSource);
+    state.plans = updatePlan(plan);
+    state.activePlan = plan;
+    renderPlanDetail();
+  });
+
+  fragment.querySelector('[data-action="delete-plan"]').addEventListener('click', () => {
+    if (confirm('Delete this plan?')) {
+      state.plans = deletePlan(plan.id);
+      renderPlansList();
+    }
+  });
+
+  elements.main.innerHTML = '';
+  elements.main.appendChild(fragment);
+}
+
+export { initApp };
