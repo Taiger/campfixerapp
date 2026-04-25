@@ -103,6 +103,22 @@
     font: inherit;
   }
 
+  /* ─── Logo ─────────────────────────────────────────────────────── */
+
+  /* "Camp" in dark forest green; "Fixer" via .logo-accent in teal — mirrors the
+     reference site's Caveat-based wordmark. Dark-mode versions are lightened so
+     both colours remain legible on the slate-900 background. */
+  .logo-brand {
+    font-family: 'Caveat', cursive;
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: rgb(44, 74, 62);
+  }
+  .dark .logo-brand        { color: rgb(120, 175, 140); }
+  .logo-brand .logo-accent { color: rgb(74, 155, 142);  }
+  .dark .logo-brand .logo-accent { color: rgb(90, 180, 165); }
+
   /* ─── Nav ──────────────────────────────────────────────────────── */
 
   .nav-btn {

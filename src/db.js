@@ -2,7 +2,8 @@
 // All SQL is run in a dedicated Worker thread via the sqlite3Worker1 message bridge.
 // The OPFS VFS stores campfixer.db persistently in the browser's private storage.
 
-import sqlite3Worker1Promiser from '../vendor/sqlite/index.mjs';
+// Named export — the default export is the sqlite3 API object, not the promiser factory.
+import { sqlite3Worker1Promiser } from '../vendor/sqlite/index.mjs';
 
 let promiser = null; // sqlite3Worker1 message bridge, set once by initDB
 let dbId = null;     // handle for the open database connection, set once by initDB
