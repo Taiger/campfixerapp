@@ -1,3 +1,6 @@
+// Persistence layer: all reads and writes to the SQLite DB go through here.
+// Exports CRUD functions for templates and plans, plus sync helpers.
+
 import { exec, run, transaction } from './db.js';
 import { createDefaultTemplates, cleanTemplate, generateId } from './templates.js';
 
@@ -53,6 +56,7 @@ export async function migrateFromLocalStorage() {
 
 // ─── Templates ────────────────────────────────────────────────────────────────
 
+// Seeds defaults on first launch if the table is empty; otherwise maps rows to objects.
 export async function loadTemplates() {
   const rows = await exec('SELECT * FROM templates ORDER BY rowid ASC');
   if (rows.length === 0) {
@@ -63,6 +67,7 @@ export async function loadTemplates() {
   return rows.map(_rowToTemplate);
 }
 
+// Replaces the entire templates table in a single transaction (used for bulk reorder/save).
 export async function saveTemplates(templates) {
   await transaction(async () => {
     await run('DELETE FROM templates');
@@ -70,12 +75,14 @@ export async function saveTemplates(templates) {
   });
 }
 
+// Validates and inserts a single new template; returns the cleaned object.
 export async function createTemplate(template) {
   const clean = cleanTemplate(template);
   await _insertTemplate(clean);
   return clean;
 }
 
+// Bumps version and updatedAt, then upserts the updated template; returns the full list.
 export async function updateTemplate(updatedTemplate) {
   const all = await loadTemplates();
   const index = all.findIndex(t => t.id === updatedTemplate.id);
@@ -89,11 +96,13 @@ export async function updateTemplate(updatedTemplate) {
   return all;
 }
 
+// Deletes a template by id and returns the refreshed template list.
 export async function deleteTemplate(templateId) {
   await run('DELETE FROM templates WHERE id = ?', [templateId]);
   return loadTemplates();
 }
 
+// Maps a DB row to a template object, parsing the JSON-serialised item list.
 function _rowToTemplate(row) {
   let defaultItems = [];
   try { defaultItems = JSON.parse(row.data); } catch (_) {}
@@ -107,6 +116,7 @@ function _rowToTemplate(row) {
   };
 }
 
+// Simple INSERT — used for bulk writes where conflicts are not expected.
 async function _insertTemplate(t) {
   await run(
     `INSERT INTO templates (id, name, description, version, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -114,6 +124,7 @@ async function _insertTemplate(t) {
   );
 }
 
+// INSERT OR REPLACE — used for single-record updates where a conflict means "overwrite".
 async function _upsertTemplate(t) {
   await run(
     `INSERT OR REPLACE INTO templates (id, name, description, version, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -123,6 +134,7 @@ async function _upsertTemplate(t) {
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
 
+// Loads all plans, fetching each plan's items in a per-plan query.
 export async function loadPlans() {
   const plans = await exec('SELECT * FROM plans ORDER BY rowid ASC');
   const result = [];
@@ -136,6 +148,7 @@ export async function loadPlans() {
   return result;
 }
 
+// Replaces all plans and their items in a single transaction (used for bulk reorder/save).
 export async function savePlans(plans) {
   await transaction(async () => {
     await run('DELETE FROM plan_items');
@@ -150,6 +163,8 @@ export async function savePlans(plans) {
   });
 }
 
+// Copies template.defaultItems into plan items, recording sourceItemId on each so
+// future syncs can identify which template items are already present in the plan.
 export async function createPlanFromTemplate(template, planName) {
   const items = (template.defaultItems || []).map(item => ({
     planItemId: generateId('plan'),
@@ -173,6 +188,7 @@ export async function createPlanFromTemplate(template, planName) {
   };
 }
 
+// Persists a new plan with all its items; returns the refreshed plan list.
 export async function addPlan(plan) {
   await transaction(async () => {
     await run(
@@ -184,6 +200,7 @@ export async function addPlan(plan) {
   return loadPlans();
 }
 
+// Replaces a plan's header row and all its items (used for edits and post-sync saves).
 export async function updatePlan(plan) {
   await transaction(async () => {
     await run(
@@ -196,6 +213,7 @@ export async function updatePlan(plan) {
   return loadPlans();
 }
 
+// Deletes a plan and all its items; returns the refreshed plan list.
 export async function deletePlan(planId) {
   await transaction(async () => {
     await run('DELETE FROM plan_items WHERE planId = ?', [planId]);
@@ -206,6 +224,8 @@ export async function deletePlan(planId) {
 
 // ─── Sync logic ───────────────────────────────────────────────────────────────
 
+// One-way pull: appends template items not yet in the plan, matched by sourceItemId.
+// Updates lastSyncedVersion but does not persist — caller must call updatePlan.
 export async function syncPlanWithTemplate(plan, template) {
   const existingSourceIds = new Set(plan.items.map(i => i.sourceItemId).filter(Boolean));
   const newItems = (template.defaultItems || [])
@@ -227,6 +247,9 @@ export async function syncPlanWithTemplate(plan, template) {
   return plan;
 }
 
+// One-way push: copies plan-only items back to the template and wires sourceItemId
+// on the plan items so subsequent syncs recognise them as already present.
+// Returns { template, plan, addedCount } — caller must persist both objects.
 export async function pushPlanItemsToTemplate(plan, template) {
   const existingIds = new Set(template.defaultItems.map(i => i.id));
   const itemsToAdd = plan.items.filter(
@@ -244,6 +267,7 @@ export async function pushPlanItemsToTemplate(plan, template) {
     weight: item.weight || '',
   }));
 
+  // Build a planItemId → new template item id map to back-fill sourceItemId on the plan.
   const idMap = new Map(itemsToAdd.map((item, i) => [item.planItemId, newTemplateItems[i].id]));
 
   const updatedTemplate = {
@@ -268,6 +292,8 @@ export async function pushPlanItemsToTemplate(plan, template) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Maps a plans row + its plan_items rows to a plain JS plan object.
+// SQLite stores booleans as 0/1 integers, so packed is coerced to boolean here.
 function _rowToPlan(row, itemRows) {
   return {
     id: row.id,

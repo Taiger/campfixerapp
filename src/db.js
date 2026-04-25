@@ -1,8 +1,16 @@
+// SQLite database layer using the sqlite-wasm OPFS (Origin Private File System) VFS.
+// All SQL is run in a dedicated Worker thread via the sqlite3Worker1 message bridge.
+// The OPFS VFS stores campfixer.db persistently in the browser's private storage.
+
 import sqlite3Worker1Promiser from '../vendor/sqlite/index.mjs';
 
-let promiser = null;
-let dbId = null;
+let promiser = null; // sqlite3Worker1 message bridge, set once by initDB
+let dbId = null;     // handle for the open database connection, set once by initDB
 
+// Starts the SQLite worker, opens (or creates) campfixer.db via OPFS, ensures
+// the three core tables exist, and requests persistent storage so the browser
+// won't evict the database under storage pressure. Must be called before any
+// other function in this module.
 async function initDB() {
   promiser = await sqlite3Worker1Promiser({
     worker: () => new Worker(
@@ -46,9 +54,11 @@ async function initDB() {
     packed INTEGER DEFAULT 0
   )`);
 
+  // Request durable storage — without this the browser may clear OPFS under quota pressure.
   await navigator.storage.persist();
 }
 
+// Runs a query that returns rows (SELECT). Returns an array of plain row objects.
 async function exec(sql, bind = []) {
   const result = await promiser('exec', {
     dbId,
@@ -60,10 +70,12 @@ async function exec(sql, bind = []) {
   return result.result.resultRows || [];
 }
 
+// Runs a write statement (INSERT / UPDATE / DELETE / DDL) with no return value.
 async function run(sql, bind = []) {
   await promiser('exec', { dbId, sql, bind });
 }
 
+// Wraps fn in an explicit BEGIN/COMMIT block. Rolls back and re-throws on error.
 async function transaction(fn) {
   await run('BEGIN');
   try {
@@ -75,6 +87,7 @@ async function transaction(fn) {
   }
 }
 
+// Returns the raw database file bytes (Uint8Array) for backup download.
 async function exportDB() {
   const result = await promiser('export', { dbId });
   return result.result.byteArray;

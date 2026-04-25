@@ -1,3 +1,6 @@
+// Pure data utilities for templates: seed data, id generation, cloning, and validation.
+// No I/O — all reads and writes go through storage.js.
+
 // Built-in starter template shown to new users on first launch.
 // Add more objects here to seed additional default templates.
 const DEFAULT_TEMPLATES = [
