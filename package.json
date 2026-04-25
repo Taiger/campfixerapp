@@ -1,13 +1,17 @@
 {
   "name": "campfixer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A small progressive web app for car camping packing plans.",
   "type": "module",
   "scripts": {
     "build:css": "tailwindcss -i ./src/input.css -o ./style.css",
     "watch:css": "tailwindcss -i ./src/input.css -o ./style.css --watch",
     "start": "python3 -m http.server 8000",
-    "check": "node --check src/main.js src/app.js src/storage.js src/templates.js src/service-worker.js"
+    "check": "node --check src/main.js src/app.js src/storage.js src/templates.js src/service-worker.js src/db.js",
+    "copy-sqlite": "mkdir -p vendor/sqlite && cp node_modules/@sqlite.org/sqlite-wasm/dist/index.mjs vendor/sqlite/ && cp node_modules/@sqlite.org/sqlite-wasm/dist/sqlite3-worker1.mjs vendor/sqlite/ && cp node_modules/@sqlite.org/sqlite-wasm/dist/sqlite3.wasm vendor/sqlite/ && cp node_modules/@sqlite.org/sqlite-wasm/dist/sqlite3-opfs-async-proxy.js vendor/sqlite/"
+  },
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.0-build1"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.0"

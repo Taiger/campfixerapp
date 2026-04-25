@@ -71,6 +71,11 @@
           <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Create and sync plans from templates, then keep your packing list ready.</p>
           <button data-action="goto" data-target="plans" class="btn-primary">Open Plans</button>
         </div>
+        <div class="card">
+          <h3>Backup</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Download a copy of the SQLite database file for offline backup.</p>
+          <button data-action="download-db" class="btn-secondary">⬇ Download database</button>
+        </div>
       </div>
     </section>
   </template>
@@ -144,6 +149,7 @@
         <button data-action="push-to-template" class="btn-push">Push items to template</button>
         <button data-action="save-plan" class="btn-primary">Save plan</button>
         <button data-action="delete-plan" class="btn-danger">Delete plan</button>
+        <button data-action="download-db" class="btn-secondary">⬇ Download database</button>
       </div>
     </section>
   </template>

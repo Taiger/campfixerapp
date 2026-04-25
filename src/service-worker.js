@@ -1,4 +1,4 @@
-const CACHE_NAME = 'campfixer-cache-v2';
+const CACHE_NAME = 'campfixer-cache-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -7,7 +7,12 @@ const ASSETS = [
   '/src/main.js',
   '/src/app.js',
   '/src/storage.js',
-  '/src/templates.js'
+  '/src/templates.js',
+  '/src/db.js',
+  '/vendor/sqlite/index.mjs',
+  '/vendor/sqlite/sqlite3-worker1.mjs',
+  '/vendor/sqlite/sqlite3.wasm',
+  '/vendor/sqlite/sqlite3-opfs-async-proxy.js',
 ];
 
 self.addEventListener('install', event => {
