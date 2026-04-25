@@ -1,6 +1,30 @@
 // UI layer: all render* functions build views from <template> elements in index.html,
 // wire up event handlers, and mutate `state`. No direct DB calls — all persistence
 // goes through storage.js.
+//
+// Rendering model
+// ───────────────
+// Each view has a matching <template id="…-template"> element in index.html.
+// render* functions clone the template's content into a DocumentFragment, wire
+// up all event handlers on the fragment, then swap it into #app-main in one
+// DOM write (elements.main.innerHTML = ''; elements.main.appendChild(fragment)).
+// This avoids layout thrash from incremental DOM mutations and keeps each view's
+// event listeners scoped to a fresh subtree.
+//
+// Edit-before-save pattern
+// ────────────────────────
+// renderTemplateEditor and renderPlanDetail both deep-clone the active record
+// from state before letting the user edit it.  Mutations stay in the local copy
+// until the user clicks Save, at which point the record is written to SQLite and
+// state is refreshed from the DB.  Clicking Back discards the local copy with
+// no side effects.
+//
+// State
+// ─────
+// `state` is the single in-memory source of truth between renders.  It is
+// populated from SQLite at startup (initApp) and kept in sync by refreshing
+// the relevant array after every write (each storage.js mutator returns the
+// full updated list).
 
 import {
   loadTemplates,
@@ -346,8 +370,10 @@ function renderPlansList() {
   elements.main.appendChild(fragment);
 }
 
-// Renders the new-plan form (name + template picker) as an inline div rather
-// than a <template> element because it has no dynamic list content to stamp out.
+// Renders the new-plan form (name + template picker).
+// Built as a plain div rather than a <template> element because its structure
+// is fully static — there's no repeating list to stamp out, so cloneNode(true)
+// would add ceremony without benefit.
 function renderPlanCreator() {
   const wrapper = document.createElement('div');
   wrapper.className = 'panel';
@@ -487,6 +513,8 @@ function renderPlanDetail() {
   fragment.querySelector('[data-action="add-plan-item"]').addEventListener('click', addItem);
 
   fragment.querySelector('[data-action="save-plan"]').addEventListener('click', async () => {
+    // The plan title is a plain text node in the rendered view, not a form input,
+    // so we read it back from the DOM rather than from a named field.
     plan.name = document.getElementById('plan-title').textContent;
     state.plans = await updatePlan(plan);
     state.activePlan = plan;

@@ -1,5 +1,27 @@
 // Persistence layer: all reads and writes to the SQLite DB go through here.
-// Exports CRUD functions for templates and plans, plus sync helpers.
+// Exports CRUD functions for templates and plans, plus two-way sync helpers.
+//
+// Sync model overview
+// ───────────────────
+// Templates are the source of truth for what items belong in a trip type.
+// Plans are instances of a template for a specific trip; they may diverge from
+// their template over time (items added, removed, or renamed per-trip).
+//
+// Two operations keep templates and plans in sync:
+//
+//   syncPlanWithTemplate (pull)  — copies template items not yet in the plan.
+//     Triggered by "Sync with template".  Identified by sourceItemId: only
+//     template items whose id is absent from plan.items[*].sourceItemId are new.
+//
+//   pushPlanItemsToTemplate (push) — promotes plan-only items to the template.
+//     Triggered by "Push items to template".  Items with no sourceItemId (or a
+//     stale one not found in the template) are considered plan-exclusive and
+//     worth sharing.  After the push, each promoted item gets a sourceItemId so
+//     future syncs won't re-add it.
+//
+// template.version drives the "sync available" signal: when a plan's
+// lastSyncedVersion is behind template.version, new items may be available.
+// Version is bumped on every template save and on every push.
 
 import { exec, run, transaction } from './db.js';
 import { createDefaultTemplates, cleanTemplate, generateId } from './templates.js';
@@ -224,8 +246,11 @@ export async function deletePlan(planId) {
 
 // ─── Sync logic ───────────────────────────────────────────────────────────────
 
-// One-way pull: appends template items not yet in the plan, matched by sourceItemId.
-// Updates lastSyncedVersion but does not persist — caller must call updatePlan.
+// One-way pull: appends any template items the plan doesn't already have.
+// Matching is done by sourceItemId, NOT by name — so a renamed template item
+// is still considered "already in the plan" as long as its id is present.
+// Updates lastSyncedVersion to the template's current version.
+// Does not persist — caller must await updatePlan(plan) afterwards.
 export async function syncPlanWithTemplate(plan, template) {
   const existingSourceIds = new Set(plan.items.map(i => i.sourceItemId).filter(Boolean));
   const newItems = (template.defaultItems || [])
@@ -247,9 +272,19 @@ export async function syncPlanWithTemplate(plan, template) {
   return plan;
 }
 
-// One-way push: copies plan-only items back to the template and wires sourceItemId
-// on the plan items so subsequent syncs recognise them as already present.
-// Returns { template, plan, addedCount } — caller must persist both objects.
+// One-way push: promotes plan-exclusive items to the template so future plans
+// and syncs can include them.  A plan item is "plan-exclusive" when it has no
+// sourceItemId, or its sourceItemId doesn't match any current template item
+// (meaning the source item was deleted from the template after the plan was made).
+//
+// After pushing, each promoted plan item receives a new sourceItemId pointing to
+// the freshly created template item — this prevents future syncs from re-adding
+// the same item again.  template.version is bumped so other plans can detect the
+// new items via their lastSyncedVersion comparison.
+//
+// Returns { template, plan, addedCount }.  Caller must persist both objects:
+//   await updateTemplate(result.template);
+//   await updatePlan(result.plan);
 export async function pushPlanItemsToTemplate(plan, template) {
   const existingIds = new Set(template.defaultItems.map(i => i.id));
   const itemsToAdd = plan.items.filter(
@@ -267,7 +302,8 @@ export async function pushPlanItemsToTemplate(plan, template) {
     weight: item.weight || '',
   }));
 
-  // Build a planItemId → new template item id map to back-fill sourceItemId on the plan.
+  // Map each original planItemId to its newly assigned template item id so we
+  // can back-fill sourceItemId on the plan without a second array scan.
   const idMap = new Map(itemsToAdd.map((item, i) => [item.planItemId, newTemplateItems[i].id]));
 
   const updatedTemplate = {

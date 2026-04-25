@@ -1,6 +1,18 @@
 // Service worker providing offline support via a cache-first strategy.
-// Bump CACHE_NAME whenever the asset list changes — clients with the old cache
-// name will download the new assets on next visit and activate the updated SW.
+//
+// Cache versioning
+// ────────────────
+// Bump CACHE_NAME (e.g. v4 → v5) whenever the asset list changes.  The activate
+// handler deletes every cache whose name doesn't match CACHE_NAME, so old cached
+// files are purged the moment the new SW takes control.
+//
+// skipWaiting + clients.claim
+// ───────────────────────────
+// self.skipWaiting() in the install handler lets the new SW bypass the normal
+// "wait for all tabs to close" phase and activate immediately after install.
+// self.clients.claim() in activate then takes control of all open tabs right
+// away, so the fresh cache is served without requiring a manual reload.
+// Together they ensure code changes are never blocked behind a stale SW.
 
 // All app assets to pre-cache at install time.
 const CACHE_NAME = 'campfixer-cache-v4';

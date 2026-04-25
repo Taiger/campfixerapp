@@ -1,5 +1,10 @@
 // Pure data utilities for templates: seed data, id generation, cloning, and validation.
 // No I/O — all reads and writes go through storage.js.
+//
+// NOTE: getSeedTemplates() and saveTemplates() at the bottom of this file are
+// left over from the localStorage era and are no longer called by anything.
+// They are kept here in case a future export/import feature needs them, but the
+// live storage path is exclusively through storage.js → db.js (SQLite/OPFS).
 
 // Built-in starter template shown to new users on first launch.
 // Add more objects here to seed additional default templates.
@@ -45,25 +50,15 @@ const DEFAULT_TEMPLATES = [
   }
 ];
 
-// localStorage key where all templates are persisted as a JSON string.
+// ─── Superseded localStorage helpers (kept for reference, not called) ─────────
+// These were the storage layer before the SQLite/OPFS migration.
+// The active storage path is storage.js → db.js.
+
+// Key used to store the templates array in localStorage before the migration.
 const STORAGE_KEY = 'campfixer:templates';
 
-// Generates a short random ID with the given prefix, e.g. "item-x7k2a9b".
-function generateId(prefix = 'item') {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function cloneTemplate(template) {
-  return JSON.parse(JSON.stringify(template));
-}
-
-function createDefaultTemplates() {
-  return DEFAULT_TEMPLATES.map(cloneTemplate);
-}
-
 // Returns templates from localStorage, seeding defaults if storage is empty or corrupt.
-// Troubleshooting: if templates keep resetting, localStorage may be clearing between sessions
-// (private/incognito mode, or storage quota exceeded).
+// Not called by the app — replaced by storage.js loadTemplates().
 function getSeedTemplates() {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
@@ -71,26 +66,45 @@ function getSeedTemplates() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
     return seed;
   }
-
   try {
     const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      throw new Error('Invalid templates');
-    }
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Invalid templates');
     return parsed;
-  } catch (error) {
-    // Storage was present but unparseable — fall back to defaults.
+  } catch {
     const seed = createDefaultTemplates();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
     return seed;
   }
 }
 
+// Persists the templates array to localStorage.
+// Not called by the app — replaced by storage.js saveTemplates().
 function saveTemplates(templates) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(templates));
 }
 
-// Fills in missing fields with safe defaults so old/incomplete saved data doesn't break the UI.
+// ─── Active utilities ──────────────────────────────────────────────────────────
+
+// Generates a short random ID with the given prefix, e.g. "item-x7k2a9b".
+// Math.random is fine here — IDs only need to be locally unique, not cryptographic.
+function generateId(prefix = 'item') {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Deep-clones a template so mutations to the copy can't corrupt the original.
+function cloneTemplate(template) {
+  return JSON.parse(JSON.stringify(template));
+}
+
+// Returns fresh copies of the built-in defaults — called by loadTemplates() when
+// the SQLite templates table is empty (i.e. first ever launch on this device).
+function createDefaultTemplates() {
+  return DEFAULT_TEMPLATES.map(cloneTemplate);
+}
+
+// Fills in missing fields with safe defaults so old/incomplete saved data
+// (e.g. items that were hand-typed before description/size/weight existed)
+// doesn't crash downstream rendering or SQLite inserts.
 function normalizeTemplateItem(item) {
   return {
     id: item.id || generateId('item'),

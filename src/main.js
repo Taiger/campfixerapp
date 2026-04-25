@@ -1,5 +1,22 @@
 // App entry point: initialises the database, runs any one-time migrations,
 // boots the UI, and registers the service worker for offline support.
+//
+// Initialisation sequence (DOMContentLoaded)
+// ───────────────────────────────────────────
+//   1. Apply theme immediately (already done by inline <head> script to avoid flash)
+//   2. showLoadingState  — placeholder while the SQLite worker starts
+//   3. initDB            — starts the Web Worker, opens campfixer.db in OPFS
+//   4. migrateFromLocalStorage — one-time copy of any pre-migration data, then clears it
+//   5. initApp           — loads templates + plans from SQLite, renders dashboard
+//   6. Register service worker — non-blocking; failure is non-fatal
+//
+// Theme storage exception
+// ───────────────────────
+// Theme preference is the one piece of data still stored in localStorage (key:
+// 'campfixer:theme').  It must be readable synchronously in a tiny inline <head>
+// script so the correct background colour is applied before the first paint,
+// preventing a white flash on dark-mode devices.  SQLite/OPFS is async and
+// worker-based — it cannot be read that early in the page lifecycle.
 
 import { initDB } from './db.js';
 import { migrateFromLocalStorage } from './storage.js';
@@ -34,8 +51,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   updateThemeIcon(isDark);
   updateThemeColor(isDark);
 
-  // Persist the choice to localStorage so the inline <head> script can apply
-  // it before first paint on the next load, preventing a theme flash.
+  // Persist to localStorage (not SQLite) — the inline <head> script reads it
+  // synchronously to set the 'dark' class before first paint (see note above).
   document.getElementById('theme-toggle').addEventListener('click', () => {
     const nowDark = document.documentElement.classList.toggle('dark');
     localStorage.setItem('campfixer:theme', nowDark ? 'dark' : 'light');
