@@ -1,7 +1,7 @@
 {
   "name": "campfixer",
   "version": "0.2.0",
-  "description": "A small progressive web app for car camping packing plans.",
+  "description": "A small progressive web app for camping packing plans.",
   "type": "module",
   "scripts": {
     "build:css": "tailwindcss -i ./src/input.css -o ./style.css",

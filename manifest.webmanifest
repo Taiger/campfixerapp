@@ -1,7 +1,7 @@
 {
   "name": "Campfixer",
   "short_name": "Campfixer",
-  "description": "A simple car camping packing plan PWA using templates and sync updates.",
+  "description": "A simple camping packing plan PWA using templates and sync updates.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0f172a",

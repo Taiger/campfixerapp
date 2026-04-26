@@ -11,8 +11,8 @@
 const DEFAULT_TEMPLATES = [
   {
     id: 'template-car-camping-1',
-    name: 'Car Camping Essentials',
-    description: 'A starter template for a comfortable car camping trip.',
+    name: 'camping Essentials',
+    description: 'A starter template for a comfortable camping trip.',
     version: 1,
     updatedAt: '2026-04-24',
     defaultItems: [

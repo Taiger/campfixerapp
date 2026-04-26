@@ -1,6 +1,6 @@
 # Campfixer
 
-Campfixer is a Progressive Web App for planning car camping packing lists. You build reusable templates of default gear items, create trip-specific packing plans from those templates, mark items packed as you load the car, and sync plans back and forth with their source template as your kit evolves.
+Campfixer is a Progressive Web App for planning camping packing lists. You build reusable templates of default gear items, create trip-specific packing plans from those templates, mark items packed as you load the car, and sync plans back and forth with their source template as your kit evolves.
 
 All data is stored locally in the browser using **SQLite WASM + OPFS** — no server, no account, no sync service. The app works fully offline once loaded.
 
@@ -8,7 +8,7 @@ All data is stored locally in the browser using **SQLite WASM + OPFS** — no se
 
 ## Features
 
-- Create car camping templates with default packing items
+- Create camping templates with default packing items
 - Store each item with name, importance (High / Medium / Low), description, optional size, and optional weight
 - Create a packing plan from any template — the plan is pre-loaded with the template's default items
 - Mark individual items packed/unpacked during loading
