@@ -60,11 +60,12 @@ export async function migrateFromLocalStorage() {
           for (const item of (p.items || [])) {
             await run(
               `INSERT OR IGNORE INTO plan_items
-               (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [item.planItemId, p.id, item.sourceTemplateId || null, item.sourceItemId || null,
                item.name || '', item.importance || 'Medium', item.description || '',
-               item.size || '', item.weight || '', item.packed ? 1 : 0]
+               item.size || '', item.weight || '', item.packed ? 1 : 0,
+               JSON.stringify(item.extraFields || {})]
             );
           }
         }
@@ -198,6 +199,7 @@ export async function createPlanFromTemplate(template, planName) {
     size: item.size,
     weight: item.weight,
     packed: false,
+    extraFields: item.extraFields || {},
   }));
 
   return {
@@ -265,6 +267,7 @@ export async function syncPlanWithTemplate(plan, template) {
       size: item.size,
       weight: item.weight,
       packed: false,
+      extraFields: item.extraFields || {},
     }));
 
   if (newItems.length > 0) plan.items = [...plan.items, ...newItems];
@@ -300,6 +303,7 @@ export async function pushPlanItemsToTemplate(plan, template) {
     description: item.description,
     size: item.size || '',
     weight: item.weight || '',
+    extraFields: item.extraFields || {},
   }));
 
   // Map each original planItemId to its newly assigned template item id so we
@@ -348,16 +352,18 @@ function _rowToPlan(row, itemRows) {
       size: r.size,
       weight: r.weight,
       packed: r.packed === 1,
+      extraFields: (() => { try { return JSON.parse(r.extraFields || '{}'); } catch (_) { return {}; } })(),
     })),
   };
 }
 
 async function _insertPlanItem(item, planId) {
   await run(
-    `INSERT INTO plan_items (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO plan_items (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [item.planItemId, planId, item.sourceTemplateId || null, item.sourceItemId || null,
      item.name || '', item.importance || 'Medium', item.description || '',
-     item.size || '', item.weight || '', item.packed ? 1 : 0]
+     item.size || '', item.weight || '', item.packed ? 1 : 0,
+     JSON.stringify(item.extraFields || {})]
   );
 }

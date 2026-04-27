@@ -15,7 +15,7 @@
 // Together they ensure code changes are never blocked behind a stale SW.
 
 // All app assets to pre-cache at install time.
-const CACHE_NAME = 'campfixer-cache-v4';
+const CACHE_NAME = 'campfixer-cache-v5';
 const ASSETS = [
   '/',
   '/index.html',
@@ -27,6 +27,7 @@ const ASSETS = [
   '/src/storage.js',
   '/src/templates.js',
   '/src/db.js',
+  '/vendor/lit/lit-html.js',
   '/vendor/sqlite/index.mjs',
   '/vendor/sqlite/sqlite3-worker1.mjs',
   '/vendor/sqlite/sqlite3.wasm',

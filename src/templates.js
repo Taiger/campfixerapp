@@ -112,7 +112,8 @@ function normalizeTemplateItem(item) {
     importance: item.importance || 'Medium',
     description: item.description || '',
     size: item.size || '',
-    weight: item.weight || ''
+    weight: item.weight || '',
+    extraFields: item.extraFields || {},
   };
 }
 

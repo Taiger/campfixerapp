@@ -1,36 +1,7 @@
-// UI layer: all render* functions build views from <template> elements in index.html,
-// wire up event handlers, and mutate `state`. No direct DB calls — all persistence
-// goes through storage.js.
-//
-// Rendering model
-// ───────────────
-// Each view has a matching <template id="…-template"> element in index.html.
-// render* functions clone the template's content into a DocumentFragment, wire
-// up all event handlers on the fragment, then swap it into #app-main in one
-// DOM write (elements.main.innerHTML = ''; elements.main.appendChild(fragment)).
-// This avoids layout thrash from incremental DOM mutations and keeps each view's
-// event listeners scoped to a fresh subtree.
-//
-// Edit-before-save pattern
-// ────────────────────────
-// renderTemplateEditor and renderPlanDetail both deep-clone the active record
-// from state before letting the user edit it.  Mutations stay in the local copy
-// until the user clicks Save, at which point the record is written to SQLite and
-// state is refreshed from the DB.  Clicking Back discards the local copy with
-// no side effects.
-//
-// State
-// ─────
-// `state` is the single in-memory source of truth between renders.  It is
-// populated from SQLite at startup (initApp) and kept in sync by refreshing
-// the relevant array after every write (each storage.js mutator returns the
-// full updated list).
-
+import { html, render } from '../vendor/lit/lit-html.js';
 import {
   loadTemplates,
   loadPlans,
-  createTemplate,
-  updateTemplate,
   deleteTemplate,
   createPlanFromTemplate,
   addPlan,
@@ -39,536 +10,519 @@ import {
   syncPlanWithTemplate,
   pushPlanItemsToTemplate,
   saveTemplates,
-  savePlans,
 } from './storage.js';
 import { exportDB } from './db.js';
+import { generateId } from './templates.js';
 
-// Centralised in-memory app state; the source of truth between renders.
 const state = {
   view: 'dashboard',
   templates: [],
   plans: [],
-  activeTemplate: null, // template being edited in renderTemplateEditor
-  activePlan: null,     // plan open in renderPlanDetail
+  activeTemplate: null,
+  activePlan: null,
+  editingTemplate: null,
+  editingPlan: null,
 };
 
-// Cached DOM references used across multiple render functions.
 const elements = {
   main: document.getElementById('app-main'),
   navButtons: Array.from(document.querySelectorAll('.nav-btn')),
 };
 
-// Two-tap delete guard: first click arms the button for 3 s; second click fires onConfirm.
-// Prevents accidental deletes from a single mis-tap on touch screens.
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function rerender() { renderView(state.view); }
+
+function setActiveNav(view) {
+  const navKey = { 'template-editor': 'templates', 'plan-detail': 'plans', 'plan-creator': 'plans' }[view] || view;
+  elements.navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.view === navKey));
+}
+
+// Two-tap delete guard.
 function armDeleteButton(button, onConfirm) {
-  if (button.dataset.armed === 'true') {
-    onConfirm();
-    return;
-  }
-  const originalText = button.textContent;
+  if (button.dataset.armed === 'true') { onConfirm(); return; }
+  const orig = button.textContent;
   button.dataset.armed = 'true';
   button.textContent = 'Tap again to confirm';
   button.classList.replace('btn-danger', 'btn-danger-armed');
   setTimeout(() => {
     if (button.dataset.armed === 'true') {
       button.dataset.armed = 'false';
-      button.textContent = originalText;
+      button.textContent = orig;
       button.classList.replace('btn-danger-armed', 'btn-danger');
     }
   }, 3000);
 }
 
-// Loads templates and plans into state, wires nav, then shows the dashboard.
+async function downloadDB() {
+  const bytes = await exportDB();
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'campfixer.db'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── extraFields ↔ editing array ──────────────────────────────────────────────
+
+// Adds a _fields array (editable [{key,value}] pairs) alongside extraFields.
+function withFields(item) {
+  return {
+    ...item,
+    _fields: Object.entries(item.extraFields || {}).map(([key, value]) => ({ key, value })),
+  };
+}
+
+// Strips _fields and rebuilds extraFields from it; skips blank keys.
+function finalizeItem(item) {
+  const extraFields = {};
+  for (const { key, value } of (item._fields || [])) {
+    if (key.trim()) extraFields[key.trim()] = value;
+  }
+  const { _fields, ...rest } = item;
+  return { ...rest, extraFields };
+}
+
+// ─── Entry points (initialize editing state before rendering an editor view) ──
+
+function enterTemplateEditor(template) {
+  state.activeTemplate = template || null;
+  const base = template
+    ? JSON.parse(JSON.stringify(template))
+    : { name: '', description: '', defaultItems: [] };
+  base.defaultItems = base.defaultItems.map(withFields);
+  state.editingTemplate = base;
+  renderView('template-editor');
+}
+
+function enterPlanDetail(plan) {
+  state.activePlan = plan;
+  const clone = JSON.parse(JSON.stringify(plan));
+  clone.items = clone.items.map(withFields);
+  state.editingPlan = clone;
+  renderView('plan-detail');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
 async function initApp() {
   state.templates = await loadTemplates();
   state.plans = await loadPlans();
-  attachNavListeners();
+  elements.navButtons.forEach(btn => btn.addEventListener('click', () => renderView(btn.dataset.view)));
   renderView('dashboard');
 }
 
-// Wires each data-view nav button to renderView.
-function attachNavListeners() {
-  elements.navButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      renderView(button.dataset.view);
-    });
-  });
-}
+// ─── View dispatch ────────────────────────────────────────────────────────────
 
-// Highlights the nav button that matches the current view.
-function setActiveNav(view) {
-  elements.navButtons.forEach(button => {
-    button.classList.toggle('active', button.dataset.view === view);
-  });
-}
-
-// Central dispatch: records the current view in state and calls the matching render function.
 function renderView(view) {
   state.view = view;
   setActiveNav(view);
-  if (view === 'dashboard') renderDashboard();
-  else if (view === 'templates') renderTemplatesList();
-  else if (view === 'plans') renderPlansList();
-}
-
-// Renders the dashboard: quick-nav cards and a DB backup download button.
-function renderDashboard() {
-  const template = document.getElementById('dashboard-template');
-  const fragment = template.content.cloneNode(true);
-  fragment.querySelectorAll('[data-action="goto"]').forEach(button => {
-    button.addEventListener('click', event => renderView(event.target.dataset.target));
-  });
-  // Triggers a browser file download of the raw SQLite database bytes.
-  fragment.querySelector('[data-action="download-db"]').addEventListener('click', async () => {
-    const bytes = await exportDB();
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'campfixer.db';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-  elements.main.innerHTML = '';
-  elements.main.appendChild(fragment);
-}
-
-// Renders the templates list with Edit and Duplicate actions per card.
-function renderTemplatesList() {
-  const template = document.getElementById('templates-list-template');
-  const fragment = template.content.cloneNode(true);
-  const listRoot = fragment.getElementById('templates-list');
-  const emptyState = fragment.getElementById('templates-empty');
-
-  if (state.templates.length === 0) {
-    emptyState.style.display = 'block';
-  } else {
-    emptyState.style.display = 'none';
-    state.templates.forEach(templateData => {
-      const card = document.createElement('div');
-      card.className = 'item-card';
-      card.innerHTML = `
-        <strong>${templateData.name}</strong>
-        <p>${templateData.description}</p>
-        <small>${templateData.defaultItems.length} default item(s)</small>
-        <div class="card-actions">
-          <button data-action="edit-template" data-id="${templateData.id}" class="btn-secondary">Edit</button>
-          <button data-action="copy-template" data-id="${templateData.id}" class="btn-secondary">Duplicate</button>
-        </div>
-      `;
-      listRoot.appendChild(card);
-    });
-  }
-
-  fragment.querySelector('[data-action="create-template"]').addEventListener('click', () => {
-    state.activeTemplate = null;
-    renderTemplateEditor();
-  });
-
-  fragment.querySelectorAll('[data-action="edit-template"]').forEach(button => {
-    button.addEventListener('click', () => {
-      state.activeTemplate = state.templates.find(t => t.id === button.dataset.id) || null;
-      renderTemplateEditor();
-    });
-  });
-
-  // Duplicate: deep-clones the original, assigns a new id, resets version to 1.
-  fragment.querySelectorAll('[data-action="copy-template"]').forEach(button => {
-    button.addEventListener('click', async () => {
-      const original = state.templates.find(t => t.id === button.dataset.id);
-      if (original) {
-        const copy = JSON.parse(JSON.stringify(original));
-        copy.id = `template-${Math.random().toString(36).slice(2, 9)}`;
-        copy.name = `${original.name} copy`;
-        copy.version = 1;
-        state.templates.unshift(copy);
-        await saveTemplates(state.templates);
-        renderTemplatesList();
-      }
-    });
-  });
-
-  elements.main.innerHTML = '';
-  elements.main.appendChild(fragment);
-}
-
-function renderTemplateEditor() {
-  const template = document.getElementById('template-editor-template');
-  const fragment = template.content.cloneNode(true);
-  const title = fragment.getElementById('template-editor-title');
-  const form = fragment.getElementById('template-form');
-  const itemsRoot = fragment.getElementById('template-items');
-
-  // Deep-clone the active template to avoid mutating state until save
-  const currentTemplate = state.activeTemplate ? JSON.parse(JSON.stringify(state.activeTemplate)) : {
-    name: '',
-    description: '',
-    defaultItems: [],
+  const views = {
+    dashboard: dashboardTemplate,
+    templates: templatesListTemplate,
+    'template-editor': templateEditorTemplate,
+    plans: plansListTemplate,
+    'plan-creator': planCreatorTemplate,
+    'plan-detail': planDetailTemplate,
   };
+  if (views[view]) render(views[view](), elements.main);
+}
 
-  title.textContent = currentTemplate.name ? `Edit template: ${currentTemplate.name}` : 'New template';
-  form.name.value = currentTemplate.name;
-  form.description.value = currentTemplate.description;
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 
-  // Rebuilds the item list; pass animateNewItem=true to fade-in and scroll to the last item
-  function renderItems(animateNewItem = false) {
-    itemsRoot.innerHTML = '';
-    currentTemplate.defaultItems.forEach((item, index) => {
-      const isNew = animateNewItem && index === currentTemplate.defaultItems.length - 1;
-      const card = document.createElement('div');
-      card.className = 'item-card' + (isNew ? ' animate-fade-in' : '');
-      card.innerHTML = `
-        <label>Item name<input value="${item.name}" data-field="name" data-index="${index}" /></label>
-        <label>Importance
-          <select data-field="importance" data-index="${index}">
-            <option${item.importance === 'High' ? ' selected' : ''}>High</option>
-            <option${item.importance === 'Medium' ? ' selected' : ''}>Medium</option>
-            <option${item.importance === 'Low' ? ' selected' : ''}>Low</option>
-          </select>
+function dashboardTemplate() {
+  return html`
+    <section class="panel">
+      <h2 class="text-xl font-semibold mb-1">Campfixer Dashboard</h2>
+      <p class="text-slate-500 dark:text-slate-400 text-sm mb-5">
+        Use templates to create custom camping packing plans. Sync plans when you add new default items.
+      </p>
+      <div class="card-grid">
+        <div class="card">
+          <h3>Templates</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Manage your camping templates and default pack items.</p>
+          <button @click=${() => renderView('templates')} class="btn-primary">Open Templates</button>
+        </div>
+        <div class="card">
+          <h3>Packing Plans</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Create and sync plans from templates, then keep your packing list ready.</p>
+          <button @click=${() => renderView('plans')} class="btn-primary">Open Plans</button>
+        </div>
+        <div class="card">
+          <h3>Backup</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Download a copy of the SQLite database file for offline backup.</p>
+          <button @click=${downloadDB} class="btn-secondary">⬇ Download database</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+// ─── Templates list ───────────────────────────────────────────────────────────
+
+function templatesListTemplate() {
+  return html`
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="text-xl font-semibold">Templates</h2>
+        <button @click=${() => enterTemplateEditor(null)} class="btn-primary">New template</button>
+      </div>
+      <div class="list">
+        ${state.templates.length === 0
+          ? html`<p class="empty-state">No templates found. Add one to get started.</p>`
+          : state.templates.map(t => html`
+              <div class="item-card">
+                <strong>${t.name}</strong>
+                <p>${t.description}</p>
+                <small>${t.defaultItems.length} default item(s)</small>
+                <div class="card-actions">
+                  <button @click=${() => enterTemplateEditor(t)} class="btn-secondary">Edit</button>
+                  <button @click=${async () => {
+                    const copy = JSON.parse(JSON.stringify(t));
+                    copy.id = generateId('template');
+                    copy.name = `${t.name} copy`;
+                    copy.version = 1;
+                    state.templates.unshift(copy);
+                    await saveTemplates(state.templates);
+                    rerender();
+                  }} class="btn-secondary">Duplicate</button>
+                </div>
+              </div>
+            `)
+        }
+      </div>
+    </section>
+  `;
+}
+
+// ─── Template editor ──────────────────────────────────────────────────────────
+
+function extraFieldsSection(item) {
+  return html`
+    ${(item._fields || []).map((field, fi) => html`
+      <div class="inline-fields">
+        <label>Key
+          <input .value=${field.key} placeholder="Field name"
+                 @input=${e => { item._fields[fi].key = e.target.value; }} />
         </label>
-        <label>Description<textarea data-field="description" data-index="${index}">${item.description}</textarea></label>
-        <div class="inline-fields">
-          <label>Size<input value="${item.size}" data-field="size" data-index="${index}" /></label>
-          <label>Weight<input value="${item.weight}" data-field="weight" data-index="${index}" /></label>
-        </div>
-        <div class="card-actions">
-          <button data-action="remove-item" data-index="${index}" class="btn-danger">Remove</button>
-        </div>
-      `;
-      itemsRoot.appendChild(card);
-      if (isNew) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  // Syncs a single field edit from a data-field input/select into the in-memory template
-  function updateItem(event) {
-    const index = Number(event.target.dataset.index);
-    const field = event.target.dataset.field;
-    if (Number.isNaN(index) || !field) return;
-    currentTemplate.defaultItems[index][field] = event.target.value;
-  }
-
-  // Removes an item by index, then re-renders and re-attaches listeners
-  function removeItem(index) {
-    currentTemplate.defaultItems.splice(index, 1);
-    renderItems();
-    attachItemListeners();
-  }
-
-  // Attaches input/change and remove-button listeners to all rendered item cards
-  function attachItemListeners() {
-    itemsRoot.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', updateItem));
-    itemsRoot.querySelectorAll('[data-action="remove-item"]').forEach(button => {
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        removeItem(Number(button.dataset.index));
-      });
-    });
-  }
-
-  // Appends a blank item with defaults, then re-renders with the new-item animation
-  function addItem() {
-    currentTemplate.defaultItems.push({
-      id: `item-${Math.random().toString(36).slice(2, 9)}`,
-      name: 'New item',
-      importance: 'Medium',
-      description: '',
-      size: '',
-      weight: '',
-    });
-    renderItems(true);
-    attachItemListeners();
-  }
-
-  renderItems();
-  attachItemListeners();
-
-  fragment.querySelector('[data-action="add-item"]').addEventListener('click', addItem);
-  fragment.querySelector('[data-action="back-to-templates"]').addEventListener('click', () => renderTemplatesList());
-
-  fragment.querySelector('[data-action="save-template"]').addEventListener('click', async () => {
-    currentTemplate.name = form.name.value.trim() || 'Untitled template';
-    currentTemplate.description = form.description.value.trim();
-    if (!currentTemplate.id) {
-      // New template: assign id, set initial version, and prepend to list
-      currentTemplate.id = `template-${Math.random().toString(36).slice(2, 9)}`;
-      currentTemplate.version = 1;
-      currentTemplate.updatedAt = new Date().toISOString().split('T')[0];
-      state.templates.unshift(currentTemplate);
-    } else {
-      // Existing template: bump version and update in place
-      const index = state.templates.findIndex(t => t.id === currentTemplate.id);
-      if (index !== -1) {
-        currentTemplate.version = (state.templates[index].version || 1) + 1;
-        currentTemplate.updatedAt = new Date().toISOString().split('T')[0];
-        state.templates[index] = currentTemplate;
-      }
-    }
-    await saveTemplates(state.templates);
-    renderTemplatesList();
-  });
-
-  fragment.querySelector('[data-action="delete-template"]').addEventListener('click', async () => {
-    if (!currentTemplate.id) { renderTemplatesList(); return; }
-    if (confirm('Delete this template?')) {
-      state.templates = await deleteTemplate(currentTemplate.id);
-      renderTemplatesList();
-    }
-  });
-
-  elements.main.innerHTML = '';
-  elements.main.appendChild(fragment);
+        <label>Value
+          <input .value=${field.value} placeholder="Value"
+                 @input=${e => { item._fields[fi].value = e.target.value; }} />
+        </label>
+        <button @click=${() => { item._fields.splice(fi, 1); rerender(); }}
+                class="btn-danger" style="align-self:flex-end">×</button>
+      </div>
+    `)}
+    <button @click=${() => { item._fields.push({ key: '', value: '' }); rerender(); }}
+            class="btn-secondary">+ Add field</button>
+  `;
 }
 
-// Renders the plans list; delete uses armDeleteButton for the two-tap confirm guard.
-function renderPlansList() {
-  const template = document.getElementById('plans-list-template');
-  const fragment = template.content.cloneNode(true);
-  const listRoot = fragment.getElementById('plans-list');
-  const emptyState = fragment.getElementById('plans-empty');
-
-  if (state.plans.length === 0) {
-    emptyState.style.display = 'block';
-  } else {
-    emptyState.style.display = 'none';
-    state.plans.forEach(plan => {
-      const templateSource = state.templates.find(t => t.id === plan.templateId);
-      const card = document.createElement('div');
-      card.className = 'item-card';
-      card.innerHTML = `
-        <strong>${plan.name}</strong>
-        <p>From template: ${templateSource ? templateSource.name : 'Unknown'}</p>
-        <small>${plan.items.length} item(s)</small>
-        <div class="card-actions">
-          <button data-action="open-plan" data-id="${plan.id}" class="btn-primary">Open</button>
-          <button data-action="delete-plan" data-id="${plan.id}" class="btn-danger">Delete</button>
-        </div>
-      `;
-      listRoot.appendChild(card);
-    });
-  }
-
-  fragment.querySelector('[data-action="create-plan"]').addEventListener('click', () => renderPlanCreator());
-
-  fragment.querySelectorAll('[data-action="open-plan"]').forEach(button => {
-    button.addEventListener('click', () => {
-      state.activePlan = state.plans.find(p => p.id === button.dataset.id) || null;
-      renderPlanDetail();
-    });
-  });
-
-  fragment.querySelectorAll('[data-action="delete-plan"]').forEach(button => {
-    button.addEventListener('click', () => {
-      armDeleteButton(button, async () => {
-        state.plans = await deletePlan(button.dataset.id);
-        renderPlansList();
-      });
-    });
-  });
-
-  elements.main.innerHTML = '';
-  elements.main.appendChild(fragment);
-}
-
-// Renders the new-plan form (name + template picker).
-// Built as a plain div rather than a <template> element because its structure
-// is fully static — there's no repeating list to stamp out, so cloneNode(true)
-// would add ceremony without benefit.
-function renderPlanCreator() {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'panel';
-  wrapper.innerHTML = `
-    <div class="panel-header">
-      <button id="back-to-plans" class="btn-secondary">← Back</button>
-      <h2 class="text-xl font-semibold">Create packing plan</h2>
-    </div>
-    <form class="form-grid" id="create-plan-form">
-      <label>Plan name<input name="planName" type="text" placeholder="My weekend trip" required /></label>
-      <label>Choose template<select name="templateId"></select></label>
-    </form>
-    <div class="form-actions">
-      <button id="save-plan" class="btn-primary">Create plan</button>
+function templateItemCard(item, index) {
+  const t = state.editingTemplate;
+  return html`
+    <div class="item-card">
+      <label>Item name
+        <input .value=${item.name}
+               @input=${e => { t.defaultItems[index].name = e.target.value; }} />
+      </label>
+      <label>Importance
+        <select @change=${e => { t.defaultItems[index].importance = e.target.value; }}>
+          <option value="High" ?selected=${item.importance === 'High'}>High</option>
+          <option value="Medium" ?selected=${item.importance === 'Medium'}>Medium</option>
+          <option value="Low" ?selected=${item.importance === 'Low'}>Low</option>
+        </select>
+      </label>
+      <label>Description
+        <textarea .value=${item.description}
+                  @input=${e => { t.defaultItems[index].description = e.target.value; }}></textarea>
+      </label>
+      <div class="inline-fields">
+        <label>Size
+          <input .value=${item.size}
+                 @input=${e => { t.defaultItems[index].size = e.target.value; }} />
+        </label>
+        <label>Weight
+          <input .value=${item.weight}
+                 @input=${e => { t.defaultItems[index].weight = e.target.value; }} />
+        </label>
+      </div>
+      ${extraFieldsSection(item)}
+      <div class="card-actions">
+        <button @click=${() => { t.defaultItems.splice(index, 1); rerender(); }} class="btn-danger">Remove</button>
+      </div>
     </div>
   `;
-
-  const select = wrapper.querySelector('select[name="templateId"]');
-  state.templates.forEach(template => {
-    const option = document.createElement('option');
-    option.value = template.id;
-    option.textContent = template.name;
-    select.appendChild(option);
-  });
-
-  wrapper.querySelector('#back-to-plans').addEventListener('click', () => renderPlansList());
-  wrapper.querySelector('#save-plan').addEventListener('click', async event => {
-    event.preventDefault();
-    const planName = wrapper.querySelector('input[name="planName"]').value.trim();
-    const templateId = select.value;
-    if (!planName) { alert('Please enter a plan name.'); return; }
-    const template = state.templates.find(t => t.id === templateId);
-    if (!template) { alert('Please choose a valid template.'); return; }
-    const plan = await createPlanFromTemplate(template, planName);
-    state.plans = await addPlan(plan);
-    state.activePlan = plan;
-    renderPlanDetail();
-  });
-
-  elements.main.innerHTML = '';
-  elements.main.appendChild(wrapper);
 }
 
-// Renders the full plan detail view: item list, pack/unpack toggles, save,
-// sync-from-template (pull), push-to-template, and delete with two-tap guard.
-function renderPlanDetail() {
-  if (!state.activePlan) { renderPlansList(); return; }
+function templateEditorTemplate() {
+  const t = state.editingTemplate;
+  if (!t) return html``;
+  return html`
+    <section class="panel">
+      <div class="panel-header">
+        <button @click=${() => renderView('templates')} class="btn-secondary">← Back</button>
+        <h2 class="text-xl font-semibold">${t.name ? `Edit template: ${t.name}` : 'New template'}</h2>
+      </div>
+      <form class="form-grid" @submit=${e => e.preventDefault()}>
+        <label>Template name
+          <input type="text" name="name" .value=${t.name}
+                 @input=${e => { t.name = e.target.value; }} required />
+        </label>
+        <label>Description
+          <textarea name="description" rows="3" .value=${t.description}
+                    @input=${e => { t.description = e.target.value; }}></textarea>
+        </label>
+      </form>
+      <div class="section-header mt-6 mb-1">
+        <h3 class="font-semibold text-slate-900 dark:text-slate-100">Default items</h3>
+        <button @click=${() => {
+          t.defaultItems.push({
+            id: generateId('item'),
+            name: 'New item',
+            importance: 'Medium',
+            description: '',
+            size: '',
+            weight: '',
+            extraFields: {},
+            _fields: [],
+          });
+          rerender();
+        }} class="btn-secondary">+ Add item</button>
+      </div>
+      <div class="list">
+        ${t.defaultItems.map((item, i) => templateItemCard(item, i))}
+      </div>
+      <div class="form-actions">
+        <button @click=${saveEditingTemplate} class="btn-primary">Save template</button>
+        <button @click=${async () => {
+          if (!t.id) { renderView('templates'); return; }
+          if (confirm('Delete this template?')) {
+            state.templates = await deleteTemplate(t.id);
+            state.editingTemplate = null;
+            renderView('templates');
+          }
+        }} class="btn-danger">Delete template</button>
+      </div>
+    </section>
+  `;
+}
 
-  // Deep-clone so edits don't mutate state until the user explicitly saves.
-  const plan = JSON.parse(JSON.stringify(state.activePlan));
-  const templateSource = state.templates.find(t => t.id === plan.templateId);
-  const template = document.getElementById('plan-detail-template');
-  const fragment = template.content.cloneNode(true);
-  fragment.getElementById('plan-title').textContent = plan.name;
-  fragment.getElementById('plan-from-template').textContent =
-    `From template: ${templateSource ? templateSource.name : 'Unknown'}`;
+async function saveEditingTemplate() {
+  const t = state.editingTemplate;
+  t.name = (t.name || '').trim() || 'Untitled template';
+  t.defaultItems = t.defaultItems.map(finalizeItem);
+  if (!t.id) {
+    t.id = generateId('template');
+    t.version = 1;
+    t.updatedAt = new Date().toISOString().split('T')[0];
+    state.templates.unshift(t);
+  } else {
+    const idx = state.templates.findIndex(x => x.id === t.id);
+    if (idx !== -1) {
+      t.version = (state.templates[idx].version || 1) + 1;
+      t.updatedAt = new Date().toISOString().split('T')[0];
+      state.templates[idx] = t;
+    }
+  }
+  await saveTemplates(state.templates);
+  state.editingTemplate = null;
+  renderView('templates');
+}
 
-  const itemsRoot = fragment.getElementById('plan-items');
+// ─── Plans list ───────────────────────────────────────────────────────────────
 
-  function renderItems(animateNewItem = false) {
-    itemsRoot.innerHTML = '';
-    plan.items.forEach((item, index) => {
-      const isNew = animateNewItem && index === plan.items.length - 1;
-      const card = document.createElement('div');
-      card.className = 'item-card' + (isNew ? ' animate-fade-in' : '');
-      if (item.packed) card.classList.add('opacity-60');
-      card.innerHTML = `
-        <label>Item name<input value="${item.name}" data-field="name" data-index="${index}" /></label>
-        <label>Importance
-          <select data-field="importance" data-index="${index}">
-            <option${item.importance === 'High' ? ' selected' : ''}>High</option>
-            <option${item.importance === 'Medium' ? ' selected' : ''}>Medium</option>
-            <option${item.importance === 'Low' ? ' selected' : ''}>Low</option>
+function plansListTemplate() {
+  return html`
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="text-xl font-semibold">Packing Plans</h2>
+        <button @click=${() => renderView('plan-creator')} class="btn-primary">New packing plan</button>
+      </div>
+      <div class="list">
+        ${state.plans.length === 0
+          ? html`<p class="empty-state">No plans created yet. Create one from a template.</p>`
+          : state.plans.map(plan => {
+              const src = state.templates.find(t => t.id === plan.templateId);
+              return html`
+                <div class="item-card">
+                  <strong>${plan.name}</strong>
+                  <p>From template: ${src ? src.name : 'Unknown'}</p>
+                  <small>${plan.items.length} item(s)</small>
+                  <div class="card-actions">
+                    <button @click=${() => enterPlanDetail(plan)} class="btn-primary">Open</button>
+                    <button @click=${e => armDeleteButton(e.currentTarget, async () => {
+                      state.plans = await deletePlan(plan.id);
+                      rerender();
+                    })} class="btn-danger">Delete</button>
+                  </div>
+                </div>
+              `;
+            })
+        }
+      </div>
+    </section>
+  `;
+}
+
+// ─── Plan creator ─────────────────────────────────────────────────────────────
+
+function planCreatorTemplate() {
+  return html`
+    <div class="panel">
+      <div class="panel-header">
+        <button @click=${() => renderView('plans')} class="btn-secondary">← Back</button>
+        <h2 class="text-xl font-semibold">Create packing plan</h2>
+      </div>
+      <form class="form-grid" id="create-plan-form" @submit=${e => e.preventDefault()}>
+        <label>Plan name<input name="planName" type="text" placeholder="My weekend trip" required /></label>
+        <label>Choose template
+          <select name="templateId">
+            ${state.templates.map(t => html`<option value=${t.id}>${t.name}</option>`)}
           </select>
         </label>
-        <label>Description<textarea data-field="description" data-index="${index}">${item.description}</textarea></label>
-        <div class="inline-fields">
-          <label>Size<input value="${item.size}" data-field="size" data-index="${index}" /></label>
-          <label>Weight<input value="${item.weight}" data-field="weight" data-index="${index}" /></label>
-        </div>
-        <div class="card-actions">
-          <button data-action="toggle-packed" data-index="${index}" class="btn-secondary">
-            ${item.packed ? 'Unpack' : 'Pack'}
-          </button>
-          <button data-action="remove-item" data-index="${index}" class="btn-danger">Remove</button>
-        </div>
-      `;
-      itemsRoot.appendChild(card);
-      if (isNew) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
+      </form>
+      <div class="form-actions">
+        <button @click=${async () => {
+          const form = elements.main.querySelector('#create-plan-form');
+          const planName = form.planName.value.trim();
+          const templateId = form.templateId.value;
+          if (!planName) { alert('Please enter a plan name.'); return; }
+          const template = state.templates.find(t => t.id === templateId);
+          if (!template) { alert('Please choose a valid template.'); return; }
+          const plan = await createPlanFromTemplate(template, planName);
+          state.plans = await addPlan(plan);
+          enterPlanDetail(plan);
+        }} class="btn-primary">Create plan</button>
+      </div>
+    </div>
+  `;
+}
 
-  // Syncs a single field edit from a data-field input/select into the in-memory plan item.
-  function updateItem(event) {
-    const index = Number(event.target.dataset.index);
-    const field = event.target.dataset.field;
-    if (Number.isNaN(index) || !field) return;
-    plan.items[index][field] = event.target.value;
-  }
+// ─── Plan detail ──────────────────────────────────────────────────────────────
 
-  function removeItem(index) { plan.items.splice(index, 1); renderItems(); attachItemListeners(); }
-  // Toggling packed re-renders so the opacity class on the card updates immediately.
-  function togglePacked(index) { plan.items[index].packed = !plan.items[index].packed; renderItems(); attachItemListeners(); }
+function planItemCard(item, index) {
+  const plan = state.editingPlan;
+  return html`
+    <div class="item-card${item.packed ? ' opacity-60' : ''}">
+      <label>Item name
+        <input .value=${item.name}
+               @input=${e => { plan.items[index].name = e.target.value; }} />
+      </label>
+      <label>Importance
+        <select @change=${e => { plan.items[index].importance = e.target.value; }}>
+          <option value="High" ?selected=${item.importance === 'High'}>High</option>
+          <option value="Medium" ?selected=${item.importance === 'Medium'}>Medium</option>
+          <option value="Low" ?selected=${item.importance === 'Low'}>Low</option>
+        </select>
+      </label>
+      <label>Description
+        <textarea .value=${item.description}
+                  @input=${e => { plan.items[index].description = e.target.value; }}></textarea>
+      </label>
+      <div class="inline-fields">
+        <label>Size
+          <input .value=${item.size}
+                 @input=${e => { plan.items[index].size = e.target.value; }} />
+        </label>
+        <label>Weight
+          <input .value=${item.weight}
+                 @input=${e => { plan.items[index].weight = e.target.value; }} />
+        </label>
+      </div>
+      ${extraFieldsSection(item)}
+      <div class="card-actions">
+        <button @click=${() => {
+          plan.items[index].packed = !plan.items[index].packed;
+          rerender();
+        }} class="btn-secondary">${item.packed ? 'Unpack' : 'Pack'}</button>
+        <button @click=${() => { plan.items.splice(index, 1); rerender(); }} class="btn-danger">Remove</button>
+      </div>
+    </div>
+  `;
+}
 
-  // Attaches input, remove, and pack/unpack listeners to all rendered item cards.
-  function attachItemListeners() {
-    itemsRoot.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', updateItem));
-    itemsRoot.querySelectorAll('[data-action="remove-item"]').forEach(button => {
-      button.addEventListener('click', event => { event.preventDefault(); removeItem(Number(button.dataset.index)); });
-    });
-    itemsRoot.querySelectorAll('[data-action="toggle-packed"]').forEach(button => {
-      button.addEventListener('click', event => { event.preventDefault(); togglePacked(Number(button.dataset.index)); });
-    });
-  }
-
-  // Appends a blank plan item (not linked to any template source) with the new-item animation.
-  function addItem() {
-    plan.items.push({
-      planItemId: `plan-${Math.random().toString(36).slice(2, 9)}`,
-      sourceTemplateId: null,
-      sourceItemId: null,
-      name: 'New item',
-      importance: 'Medium',
-      description: '',
-      size: '',
-      weight: '',
-      packed: false,
-    });
-    renderItems(true);
-    attachItemListeners();
-  }
-
-  renderItems();
-  attachItemListeners();
-
-  fragment.querySelector('[data-action="back-to-plans"]').addEventListener('click', () => renderPlansList());
-  fragment.querySelector('[data-action="add-plan-item"]').addEventListener('click', addItem);
-
-  fragment.querySelector('[data-action="save-plan"]').addEventListener('click', async () => {
-    // The plan title is a plain text node in the rendered view, not a form input,
-    // so we read it back from the DOM rather than from a named field.
-    plan.name = document.getElementById('plan-title').textContent;
-    state.plans = await updatePlan(plan);
-    state.activePlan = plan;
-    alert('Plan saved.');
-  });
-
+function planDetailTemplate() {
+  if (!state.editingPlan) { renderView('plans'); return html``; }
+  const plan = state.editingPlan;
+  const templateSource = state.templates.find(t => t.id === plan.templateId);
   const tName = templateSource ? templateSource.name : 'template';
-  fragment.querySelector('[data-action="sync-plan"]').dataset.tooltip =
-    `Adds new items from "${tName}" that aren't in this plan yet`;
-  fragment.querySelector('[data-action="push-to-template"]').dataset.tooltip =
-    `Sends new items from this plan back to "${tName}"`;
 
-  fragment.querySelector('[data-action="sync-plan"]').addEventListener('click', async () => {
-    if (!templateSource) { alert('Template source not available.'); return; }
-    await syncPlanWithTemplate(plan, templateSource);
-    state.plans = await updatePlan(plan);
-    state.activePlan = plan;
-    renderPlanDetail();
-  });
+  return html`
+    <section class="panel">
+      <div class="panel-header">
+        <button @click=${() => renderView('plans')} class="btn-secondary">← Back</button>
+        <div>
+          <h2 class="text-xl font-semibold">${plan.name}</h2>
+          <p class="text-sm text-slate-500 dark:text-slate-400">From template: ${tName}</p>
+        </div>
+      </div>
+      <div class="section-header mb-1">
+        <h3 class="font-semibold text-slate-900 dark:text-slate-100">Packing items</h3>
+        <button @click=${() => {
+          plan.items.push({
+            planItemId: generateId('plan'),
+            sourceTemplateId: null,
+            sourceItemId: null,
+            name: 'New item',
+            importance: 'Medium',
+            description: '',
+            size: '',
+            weight: '',
+            packed: false,
+            extraFields: {},
+            _fields: [],
+          });
+          rerender();
+        }} class="btn-secondary">+ Add item</button>
+      </div>
+      <div class="list">
+        ${plan.items.map((item, i) => planItemCard(item, i))}
+      </div>
+      <div class="form-actions">
+        <button title=${"Adds new items from \"" + tName + "\" that aren't in this plan yet"}
+                @click=${async () => {
+                  if (!templateSource) { alert('Template source not available.'); return; }
+                  plan.items = plan.items.map(finalizeItem);
+                  await syncPlanWithTemplate(plan, templateSource);
+                  state.plans = await updatePlan(plan);
+                  const updated = state.plans.find(p => p.id === plan.id) || plan;
+                  enterPlanDetail(updated);
+                }} class="btn-sync">Sync with template</button>
+        <button title=${"Sends new items from this plan back to \"" + tName + "\""}
+                @click=${async () => {
+                  if (!templateSource) { alert('Template source not available.'); return; }
+                  plan.items = plan.items.map(finalizeItem);
+                  const result = await pushPlanItemsToTemplate(plan, templateSource);
+                  if (result.addedCount === 0) { alert('No new items to add to the template.'); return; }
+                  const tIdx = state.templates.findIndex(t => t.id === result.template.id);
+                  if (tIdx !== -1) state.templates[tIdx] = result.template;
+                  await saveTemplates(state.templates);
+                  state.plans = await updatePlan(result.plan);
+                  const updated = state.plans.find(p => p.id === result.plan.id) || result.plan;
+                  alert(`Added ${result.addedCount} item(s) to "${result.template.name}".`);
+                  enterPlanDetail(updated);
+                }} class="btn-push">Push items to template</button>
+        <button @click=${saveEditingPlan} class="btn-primary">Save plan</button>
+        <button @click=${e => armDeleteButton(e.currentTarget, async () => {
+          state.plans = await deletePlan(plan.id);
+          state.editingPlan = null;
+          renderView('plans');
+        })} class="btn-danger">Delete plan</button>
+        <button @click=${downloadDB} class="btn-secondary">⬇ Download database</button>
+      </div>
+    </section>
+  `;
+}
 
-  fragment.querySelector('[data-action="push-to-template"]').addEventListener('click', async () => {
-    if (!templateSource) { alert('Template source not available.'); return; }
-    const result = await pushPlanItemsToTemplate(plan, templateSource);
-    if (result.addedCount === 0) { alert('No new items to add to the template.'); return; }
-    const tIdx = state.templates.findIndex(t => t.id === result.template.id);
-    if (tIdx !== -1) state.templates[tIdx] = result.template;
-    await saveTemplates(state.templates);
-    state.plans = await updatePlan(result.plan);
-    state.activePlan = result.plan;
-    alert(`Added ${result.addedCount} item(s) to "${result.template.name}".`);
-    renderPlanDetail();
-  });
-
-  const deletePlanBtn = fragment.querySelector('[data-action="delete-plan"]');
-  deletePlanBtn.addEventListener('click', () => {
-    armDeleteButton(deletePlanBtn, async () => {
-      state.plans = await deletePlan(plan.id);
-      renderPlansList();
-    });
-  });
-
-  fragment.querySelector('[data-action="download-db"]').addEventListener('click', async () => {
-    const bytes = await exportDB();
-    const blob = new Blob([bytes], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'campfixer.db';
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  elements.main.innerHTML = '';
-  elements.main.appendChild(fragment);
+async function saveEditingPlan() {
+  const plan = state.editingPlan;
+  plan.items = plan.items.map(finalizeItem);
+  state.plans = await updatePlan(plan);
+  const saved = state.plans.find(p => p.id === plan.id) || plan;
+  state.activePlan = saved;
+  enterPlanDetail(saved);
+  alert('Plan saved.');
 }
 
 export { initApp };

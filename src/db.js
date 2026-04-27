@@ -88,8 +88,12 @@ async function initDB() {
     description TEXT DEFAULT '',
     size TEXT DEFAULT '',
     weight TEXT DEFAULT '',
-    packed INTEGER DEFAULT 0
+    packed INTEGER DEFAULT 0,
+    extraFields TEXT DEFAULT '{}'
   )`);
+
+  // Migrate existing databases that predate the extraFields column.
+  try { await run(`ALTER TABLE plan_items ADD COLUMN extraFields TEXT DEFAULT '{}'`); } catch (_) {}
 
   // Ask the browser to treat this origin's storage as durable.  Without this,
   // Chrome/Edge may silently delete OPFS data when the device runs low on space.
