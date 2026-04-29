@@ -5,46 +5,41 @@
 @layer base {
   html {
     @apply scroll-smooth;
-    font-family: Inter, system-ui, sans-serif;
+    font-family: Nunito, system-ui, sans-serif;
   }
 
   /* Form controls inherit the right background and text for both themes. */
   input, textarea, select {
-    @apply w-full rounded-xl border border-slate-200 dark:border-slate-600
-           bg-white dark:bg-slate-900 px-3 py-2 text-sm
-           text-slate-900 dark:text-slate-100
+    @apply w-full rounded-xl border border-stone-200 dark:border-forest-green/40
+           bg-off-white dark:bg-forest-green/10 px-3 py-2 text-sm
+           text-stone-900 dark:text-stone-100
            transition-colors duration-150;
     font: inherit;
   }
   input:focus, textarea:focus, select:focus {
-    @apply outline-none ring-2 ring-sky-400 dark:ring-sky-500 border-transparent;
+    @apply outline-none ring-2 ring-forest-green dark:ring-sage-green border-transparent;
   }
 
   label {
-    @apply flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-300;
+    @apply flex flex-col gap-1 text-sm font-medium text-stone-700 dark:text-stone-300;
   }
 
   /* Scoped text styles for dynamically generated item cards. */
-  .item-card strong { @apply block font-semibold mb-1 text-slate-900 dark:text-slate-100; }
-  .item-card p      { @apply text-sm text-slate-500 dark:text-slate-400 my-0.5; }
-  .item-card small  { @apply text-xs text-slate-400 dark:text-slate-500; }
+  .item-card strong { @apply block font-semibold mb-1 text-stone-900 dark:text-stone-100; }
+  .item-card p      { @apply text-sm text-stone-500 dark:text-stone-400 my-0.5; }
+  .item-card small  { @apply text-xs text-stone-400 dark:text-stone-500; }
 }
 
 @layer components {
 
   /* ─── Buttons ──────────────────────────────────────────────────── */
-  /*
-   * Each btn-* variant is fully self-contained (no @apply of other component
-   * classes) because Tailwind v3 does not resolve @apply chains between
-   * user-defined component classes at build time.
-   */
 
   /* Primary action: Save, Create, Open */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-sky-500 text-white hover:bg-sky-600;
+           bg-forest-green text-white hover:bg-forest-green/80;
     font: inherit;
   }
 
@@ -53,8 +48,8 @@
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-slate-200 text-slate-800 hover:bg-slate-300
-           dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600;
+           bg-stone-200 text-stone-800 hover:bg-stone-300
+           dark:bg-forest-green/20 dark:text-stone-100 dark:hover:bg-forest-green/30;
     font: inherit;
   }
 
@@ -63,7 +58,7 @@
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-red-500 text-white hover:bg-red-600;
+           bg-ember-red text-white hover:bg-ember-red/80;
     font: inherit;
   }
 
@@ -72,7 +67,7 @@
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-amber-400 text-slate-900 hover:bg-amber-500;
+           bg-camp-amber text-white hover:bg-camp-amber/80;
     font: inherit;
   }
 
@@ -81,7 +76,7 @@
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-emerald-500 text-white hover:bg-emerald-600;
+           bg-sage-green text-white hover:bg-sage-green/80;
     font: inherit;
   }
 
@@ -90,24 +85,21 @@
     @apply inline-flex items-center justify-center gap-1.5 rounded-full
            px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
-           bg-violet-500 text-white hover:bg-violet-600;
+           bg-camp-amber text-white hover:bg-camp-amber/80;
     font: inherit;
   }
 
-  /* Small square icon buttons: theme toggle, hamburger */
+  /* Small square icon buttons: theme toggle */
   .btn-icon {
     @apply flex h-9 w-9 items-center justify-center rounded-full text-base
            border-0 cursor-pointer select-none transition-colors duration-150
-           bg-slate-200 text-slate-800 hover:bg-slate-300
-           dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600;
+           bg-stone-200 text-stone-800 hover:bg-stone-300
+           dark:bg-forest-green/20 dark:text-stone-200 dark:hover:bg-forest-green/30;
     font: inherit;
   }
 
   /* ─── Logo ─────────────────────────────────────────────────────── */
 
-  /* "Camp" in dark forest green; "Fixer" via .logo-accent in teal — mirrors the
-     reference site's Caveat-based wordmark. Dark-mode versions are lightened so
-     both colours remain legible on the slate-900 background. */
   .logo-brand {
     font-family: 'Caveat', cursive;
     font-size: 1.875rem;
@@ -119,24 +111,199 @@
   .logo-brand .logo-accent { color: rgb(74, 155, 142);  }
   .dark .logo-brand .logo-accent { color: rgb(90, 180, 165); }
 
-  /* ─── Nav ──────────────────────────────────────────────────────── */
+  /* ─── Bottom Navigation ─────────────────────────────────────────── */
 
-  .nav-btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
-           transition-all duration-150 active:scale-95
-           bg-slate-200 text-slate-700 hover:bg-slate-300
-           dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700;
+  #bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 z-40
+           flex items-stretch justify-around
+           border-t border-stone-200 dark:border-forest-green/30
+           bg-off-white dark:bg-dark-moss;
+  }
+
+  .bottom-nav-btn {
+    @apply flex flex-col items-center justify-center gap-0.5 flex-1 py-2
+           text-xs font-medium text-stone-400 dark:text-stone-500
+           transition-colors duration-150 cursor-pointer
+           border-0 bg-transparent;
+    min-height: 56px;
     font: inherit;
   }
-  .nav-btn.active {
-    @apply bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300;
+  .bottom-nav-btn svg {
+    @apply w-6 h-6;
+  }
+  .bottom-nav-btn.active {
+    @apply text-forest-green dark:text-sage-green;
   }
 
-  /* Hidden on mobile by default; hamburger adds .nav-open to reveal it.
-     On md+ screens it's always visible via the md:flex media query. */
-  #app-nav          { @apply hidden md:flex; }
-  #app-nav.nav-open { @apply flex; }
+  /* ─── FAB ───────────────────────────────────────────────────────── */
+
+  .fab {
+    @apply flex items-center justify-center w-14 h-14 rounded-full
+           bg-forest-green text-white shadow-lg border-0 cursor-pointer
+           transition-all duration-150 active:scale-95;
+  }
+
+  /* ─── Trip Card (Rich Card) ─────────────────────────────────────── */
+
+  .trip-card {
+    @apply rounded-2xl bg-off-white dark:bg-forest-green/10
+           border border-stone-200 dark:border-forest-green/20
+           overflow-hidden shadow-sm cursor-pointer
+           transition-all duration-150 active:scale-[0.99];
+  }
+  .trip-card-header {
+    @apply flex items-center gap-3 p-4
+           border-b border-stone-100 dark:border-forest-green/15;
+  }
+  .trip-card-title {
+    font-family: 'Playfair Display', serif;
+    @apply text-lg font-bold text-forest-green dark:text-sage-green leading-tight;
+  }
+  .trip-card-body  { @apply p-4; }
+  .trip-card-footer { @apply px-4 pb-4 text-xs text-stone-400 dark:text-stone-500; }
+
+  /* ─── Progress Bar ──────────────────────────────────────────────── */
+
+  .progress-track {
+    @apply h-2 rounded-full bg-stone-200 dark:bg-forest-green/20 overflow-hidden;
+  }
+  .progress-fill {
+    @apply h-2 rounded-full bg-forest-green dark:bg-sage-green transition-all duration-500;
+  }
+
+  /* ─── Importance Badges ─────────────────────────────────────────── */
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-high   { @apply bg-ember-red/10 text-ember-red; }
+  .badge-medium { @apply bg-camp-amber/15 text-camp-amber dark:bg-camp-amber/20; }
+  .badge-low    { @apply bg-sage-green/15 text-sage-green dark:bg-sage-green/20; }
+
+  /* ─── Check Item Row (plan-detail) ─────────────────────────────── */
+
+  /* Wraps condensed row + optional inline expanded form; owns the separator border. */
+  .item-row-wrap {
+    @apply border-b border-stone-100 dark:border-forest-green/10 last:border-b-0;
+  }
+
+  /* Inline edit form that expands below a condensed row. */
+  .item-expand {
+    @apply pt-1 pb-4 px-1 grid gap-3;
+  }
+
+  .check-row {
+    @apply flex items-center gap-3 py-3;
+  }
+  .check-box {
+    @apply flex-shrink-0 rounded-lg border-2 border-stone-300 dark:border-forest-green/40
+           flex items-center justify-center transition-all duration-150 bg-transparent;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+  .check-box.checked {
+    @apply border-forest-green bg-forest-green text-white
+           dark:border-sage-green dark:bg-sage-green;
+  }
+  .check-row-label {
+    @apply flex-1 text-sm font-medium text-stone-800 dark:text-stone-200;
+  }
+  .check-row-label.packed {
+    @apply line-through text-stone-400 dark:text-stone-500;
+  }
+
+  /* ─── Collapsible Section (plan-detail) ─────────────────────────── */
+
+  .section-group {
+    @apply mb-2;
+  }
+  .section-group summary {
+    @apply flex items-center justify-between py-3 cursor-pointer select-none
+           font-semibold text-stone-700 dark:text-stone-300;
+    font-family: 'Playfair Display', serif;
+    list-style: none;
+  }
+  .section-group summary::-webkit-details-marker { display: none; }
+  .section-group summary::marker { display: none; }
+
+  /* ─── Bottom Sheet ──────────────────────────────────────────────── */
+
+  /* Link-styled button for inline "go to Config" nudges (no Plans yet, etc.). */
+  .inline-link {
+    @apply text-forest-green dark:text-sage-green underline cursor-pointer
+           hover:text-forest-green/70 dark:hover:text-sage-green/70;
+    background: none; border: none; padding: 0; font: inherit;
+  }
+
+  /* Label-like class for use inside inline expanded forms. */
+  .form-label {
+    @apply flex flex-col gap-1 text-sm font-medium text-stone-700 dark:text-stone-300;
+  }
+
+  /* 3-button importance toggle (used in inline expanded forms) */
+  .importance-toggle { @apply flex gap-2 mt-1; }
+  .importance-btn {
+    @apply flex-1 py-2.5 rounded-xl text-sm font-medium border-2
+           border-stone-200 dark:border-forest-green/30
+           bg-transparent text-stone-600 dark:text-stone-400
+           transition-all duration-150 cursor-pointer;
+    font: inherit;
+  }
+  .importance-btn.selected[data-value="High"]   {
+    @apply border-ember-red bg-ember-red/10 text-ember-red;
+  }
+  .importance-btn.selected[data-value="Medium"] {
+    @apply border-camp-amber bg-camp-amber/10 text-camp-amber;
+  }
+  .importance-btn.selected[data-value="Low"]    {
+    @apply border-sage-green bg-sage-green/10 text-sage-green;
+  }
+
+  /* ─── Config Section ────────────────────────────────────────────── */
+
+  .config-section-header {
+    @apply text-base font-semibold text-forest-green dark:text-sage-green mb-3 mt-8;
+    font-family: 'Playfair Display', serif;
+  }
+  .config-card {
+    @apply rounded-xl bg-off-white dark:bg-forest-green/10
+           border border-stone-200 dark:border-forest-green/20 p-4;
+  }
+
+  /* ─── Empty State ───────────────────────────────────────────────── */
+
+  .empty-state-new {
+    @apply flex flex-col items-center gap-4 py-16 text-center;
+  }
+  .empty-state-new p {
+    @apply text-stone-500 dark:text-stone-400 text-sm max-w-xs;
+  }
+
+  /* ─── Legacy layout (template editor still uses these) ─────────── */
+
+  .panel {
+    @apply rounded-2xl border border-stone-200 dark:border-forest-green/30
+           bg-off-white dark:bg-forest-green/10 p-5 mx-4 my-4;
+  }
+  .panel-header  { @apply flex items-center gap-3 mb-5 flex-wrap; }
+  .section-header { @apply flex items-center justify-between gap-2; }
+  .form-grid     { @apply grid gap-4; }
+  .form-actions  { @apply flex flex-wrap gap-3 mt-6; }
+  .card-grid     { @apply grid gap-4 sm:grid-cols-2; }
+  .card {
+    @apply rounded-xl border border-stone-200 dark:border-forest-green/20
+           bg-stone-50 dark:bg-forest-green/5 p-5;
+  }
+  .card h3 { @apply font-semibold mt-0 mb-1 text-stone-900 dark:text-stone-100; }
+  .list    { @apply grid gap-3 mt-3; }
+  .item-card {
+    @apply rounded-xl border border-stone-200 dark:border-forest-green/20
+           bg-stone-50 dark:bg-forest-green/5 p-4;
+  }
+  .card-actions  { @apply flex flex-wrap gap-2 mt-3; }
+  .inline-fields { @apply grid grid-cols-2 gap-3; }
+  .empty-state   { @apply mt-4 text-sm text-stone-500 dark:text-stone-400; }
 
   /* ─── Tooltips ─────────────────────────────────────────────────── */
 
@@ -145,39 +312,16 @@
     content: attr(data-tooltip);
     @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5
            rounded-xl text-xs whitespace-nowrap pointer-events-none opacity-0
-           bg-slate-100 text-slate-600 border border-slate-200
-           dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600
+           bg-stone-100 text-stone-600 border border-stone-200
+           dark:bg-forest-green/20 dark:text-stone-300 dark:border-forest-green/30
            transition-opacity duration-150 z-10;
   }
   [data-tooltip]:hover::after { @apply opacity-100; }
-
-  /* ─── Layout ───────────────────────────────────────────────────── */
-
-  .panel {
-    @apply rounded-2xl border border-slate-200 dark:border-slate-700
-           bg-white dark:bg-slate-800 p-6 shadow-xl;
-  }
-  .panel-header  { @apply flex items-center gap-3 mb-5 flex-wrap; }
-  .section-header { @apply flex items-center justify-between gap-2; }
-  .form-grid     { @apply grid gap-4; }
-  .form-actions  { @apply flex flex-wrap gap-3 mt-6; }
-  .card-grid     { @apply grid gap-4 sm:grid-cols-2; }
-  .card {
-    @apply rounded-xl border border-slate-200 dark:border-slate-700
-           bg-slate-50 dark:bg-slate-700/50 p-5;
-  }
-  .card h3 { @apply font-semibold mt-0 mb-1 text-slate-900 dark:text-slate-100; }
-  .list    { @apply grid gap-3 mt-3; }
-  .item-card {
-    @apply rounded-xl border border-slate-200 dark:border-slate-700
-           bg-slate-50 dark:bg-slate-700/50 p-4;
-  }
-  .card-actions  { @apply flex flex-wrap gap-2 mt-3; }
-  .inline-fields { @apply grid grid-cols-2 gap-3; }
-  .empty-state   { @apply mt-4 text-sm text-slate-500 dark:text-slate-400; }
 }
 
 @layer utilities {
+  .font-display { font-family: 'Playfair Display', serif; }
+
   @media (max-width: 480px) {
     .inline-fields { grid-template-columns: 1fr; }
   }

@@ -7,7 +7,7 @@
 //   2. showLoadingState  — placeholder while the SQLite worker starts
 //   3. initDB            — starts the Web Worker, opens campfixer.db in OPFS
 //   4. migrateFromLocalStorage — one-time copy of any pre-migration data, then clears it
-//   5. initApp           — loads templates + plans from SQLite, renders dashboard
+//   5. initApp           — loads templates + plans from SQLite, renders trips view
 //   6. Register service worker — non-blocking; failure is non-fatal
 //
 // Theme storage exception
@@ -20,7 +20,7 @@
 
 import { initDB } from './db.js';
 import { migrateFromLocalStorage } from './storage.js';
-import { initApp } from './app.js';
+import { initApp, applyThemeToggle } from './app.js';
 
 // Updates the sun/moon icon to match the active theme.
 function updateThemeIcon(isDark) {
@@ -31,19 +31,19 @@ function updateThemeIcon(isDark) {
 // Updates <meta name="theme-color"> so the browser chrome matches the active theme.
 function updateThemeColor(isDark) {
   const meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = isDark ? '#0f172a' : '#f8fafc';
+  if (meta) meta.content = isDark ? '#1A1C14' : '#F5F0E8';
 }
 
 // Shows a placeholder while the SQLite worker and OPFS database initialise.
 function showLoadingState() {
   const main = document.getElementById('app-main');
-  if (main) main.innerHTML = '<p class="text-slate-500 dark:text-slate-400 text-sm p-4">Loading database…</p>';
+  if (main) main.innerHTML = '<p class="text-stone-400 text-sm p-6">Loading…</p>';
 }
 
 // Replaces the loading placeholder with a fatal error message if init fails.
 function showErrorState(err) {
   const main = document.getElementById('app-main');
-  if (main) main.innerHTML = `<p class="text-red-500 text-sm p-4">Failed to initialise storage: ${err.message}</p>`;
+  if (main) main.innerHTML = `<p class="text-ember-red text-sm p-4">Failed to initialise storage: ${err.message}</p>`;
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -51,25 +51,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   updateThemeIcon(isDark);
   updateThemeColor(isDark);
 
-  // Persist to localStorage (not SQLite) — the inline <head> script reads it
-  // synchronously to set the 'dark' class before first paint (see note above).
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    const nowDark = document.documentElement.classList.toggle('dark');
-    localStorage.setItem('campfixer:theme', nowDark ? 'dark' : 'light');
-    updateThemeIcon(nowDark);
-    updateThemeColor(nowDark);
-  });
-
-  // Hamburger: toggle .nav-open on the nav; any nav-btn click closes it.
-  const nav = document.getElementById('app-nav');
-  document.getElementById('open-menu').addEventListener('click', () => nav.classList.toggle('nav-open'));
-  nav.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', () => nav.classList.remove('nav-open')));
+  // Header theme toggle — delegates to the shared applyThemeToggle from app.js
+  // so the config view icon stays in sync when toggled from the header.
+  document.getElementById('theme-toggle').addEventListener('click', applyThemeToggle);
 
   showLoadingState();
 
   try {
     await initDB();
     await migrateFromLocalStorage();
+    // Clear the loading placeholder so lit-html renders into an empty container.
+    document.getElementById('app-main').innerHTML = '';
     await initApp();
   } catch (err) {
     console.error('DB init failed:', err);

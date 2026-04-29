@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Campfixer</title>
-  <!-- Caveat is used only for the logo wordmark; 700 weight only to keep the download small. -->
+  <!-- Caveat for logo wordmark; Playfair Display for headings; Nunito for body -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#0f172a" id="meta-theme-color" />
+  <meta name="theme-color" content="#F5F0E8" id="meta-theme-color" />
 
   <!--
     Must load first: registers coi-serviceworker.js so it can inject COOP/COEP
@@ -34,34 +34,49 @@
     })();
   </script>
 </head>
-<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
-  <div class="max-w-4xl mx-auto px-4 py-4">
+<body class="bg-aged-paper dark:bg-dark-moss text-stone-900 dark:text-stone-100 min-h-screen transition-colors duration-200 font-body pb-20">
 
-    <header class="flex items-center justify-between gap-4 mb-4">
-      <div>
-        <h1 class="logo-brand">Camp<span class="logo-accent">Fixer</span></h1>
-        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
-          Plan camping packing with templates and auto-sync updates.
-        </p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button id="theme-toggle" class="btn-icon" aria-label="Toggle light/dark mode" title="Toggle theme">
-          <span id="theme-icon">🌙</span>
-        </button>
-        <!-- Hamburger: only visible on mobile; wired in main.js -->
-        <button id="open-menu" class="btn-icon md:hidden" aria-label="Open navigation">☰</button>
-      </div>
+  <div class="max-w-2xl mx-auto">
+
+    <header class="flex items-center justify-between gap-4 px-4 pt-4 pb-3">
+      <h1 class="logo-brand">Camp<span class="logo-accent">Fixer</span></h1>
+      <button id="theme-toggle" class="btn-icon" aria-label="Toggle light/dark mode" title="Toggle theme">
+        <span id="theme-icon">🌙</span>
+      </button>
     </header>
-
-    <!-- Hidden on mobile by default. Hamburger adds .nav-open; md+ always shows via CSS. -->
-    <nav id="app-nav" class="flex-wrap gap-2 mb-4">
-      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-      <button class="nav-btn" data-view="templates">Templates</button>
-      <button class="nav-btn" data-view="plans">Packing Plans</button>
-    </nav>
 
     <main id="app-main" class="min-h-96"></main>
   </div>
+
+  <!-- Fixed bottom navigation bar -->
+  <nav id="bottom-nav">
+    <button class="bottom-nav-btn active" data-view="trips" id="nav-trips">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+      <span>Trips</span>
+    </button>
+    <button class="bottom-nav-btn" data-view="config" id="nav-config">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span>Config</span>
+    </button>
+  </nav>
+
+  <!-- FAB: Create new trip (hidden by default, shown on trips view) -->
+  <button id="fab-new-trip" class="fab fixed bottom-20 right-5 z-30 hidden" aria-label="Create new trip">
+    <svg viewBox="0 0 24 24" fill="currentColor" class="w-7 h-7">
+      <!-- Paw print -->
+      <ellipse cx="12" cy="17.5" rx="5" ry="4"/>
+      <circle cx="6.5" cy="12.5" r="2.5"/>
+      <circle cx="17.5" cy="12.5" r="2.5"/>
+      <circle cx="9.5" cy="8.5" r="2"/>
+      <circle cx="14.5" cy="8.5" r="2"/>
+    </svg>
+  </button>
 
   <script type="module" src="src/main.js"></script>
 </body>

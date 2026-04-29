@@ -1,30 +1,47 @@
 // Persistence layer: all reads and writes to the SQLite DB go through here.
-// Exports CRUD functions for templates and plans, plus two-way sync helpers.
+// Exports CRUD functions for Plans and Trips, plus two-way sync helpers.
+//
+// Domain model
+// ─────────────
+// Plan    — a reusable camping checklist with a default set of items.
+//           Stored in the `templates` DB table (legacy column name).
+// Trip    — a specific outing created from a Plan. Items may diverge from
+//           the source Plan over time. Stored in the `plans` DB table.
+// TripItem — one line-item on a Trip. Stored in the `plan_items` DB table.
+//
+// DB column → in-memory field mappings (legacy names kept to avoid migrations)
+// ─────────────────────────────────────────────────────────────────────────────
+// templates.id            → plan.id
+// plans.templateId        → trip.planId
+// plan_items.planItemId   → tripItem.tripItemId
+// plan_items.planId       → tripItem.tripId
+// plan_items.sourceTemplateId → tripItem.sourcePlanId
+// plan_items.sourceItemId → tripItem.sourcePlanItemId
 //
 // Sync model overview
 // ───────────────────
-// Templates are the source of truth for what items belong in a trip type.
-// Plans are instances of a template for a specific trip; they may diverge from
-// their template over time (items added, removed, or renamed per-trip).
+// Plans are the source of truth for what items belong in a trip type.
+// Trips are instances of a Plan for a specific outing; they may diverge from
+// their Plan over time (items added, removed, or renamed per-trip).
 //
-// Two operations keep templates and plans in sync:
+// Two operations keep Plans and Trips in sync:
 //
-//   syncPlanWithTemplate (pull)  — copies template items not yet in the plan.
-//     Triggered by "Sync with template".  Identified by sourceItemId: only
-//     template items whose id is absent from plan.items[*].sourceItemId are new.
+//   syncTripWithPlan (pull) — copies Plan items not yet in the Trip.
+//     Triggered by "Sync with plan". Identified by sourcePlanItemId: only
+//     Plan items whose id is absent from trip.items[*].sourcePlanItemId are new.
 //
-//   pushPlanItemsToTemplate (push) — promotes plan-only items to the template.
-//     Triggered by "Push items to template".  Items with no sourceItemId (or a
-//     stale one not found in the template) are considered plan-exclusive and
-//     worth sharing.  After the push, each promoted item gets a sourceItemId so
-//     future syncs won't re-add it.
+//   pushTripItemsToPlan (push) — promotes Trip-only items back to the Plan.
+//     Triggered by "Push items to plan". Items with no sourcePlanItemId (or a
+//     stale one not found in the Plan) are Trip-exclusive and worth sharing.
+//     After the push, each promoted item gets a sourcePlanItemId so future
+//     syncs won't re-add it.
 //
-// template.version drives the "sync available" signal: when a plan's
-// lastSyncedVersion is behind template.version, new items may be available.
-// Version is bumped on every template save and on every push.
+// plan.version drives the "sync available" signal: when a trip's
+// lastSyncedVersion is behind plan.version, new items may be available.
+// Version is bumped on every Plan save and on every push.
 
 import { exec, run, transaction } from './db.js';
-import { createDefaultTemplates, cleanTemplate, generateId } from './templates.js';
+import { createDefaultPlans, cleanPlan, generateId } from './templates.js';
 
 // ─── Migration ────────────────────────────────────────────────────────────────
 
@@ -37,12 +54,12 @@ export async function migrateFromLocalStorage() {
   await transaction(async () => {
     if (rawTemplates) {
       try {
-        const templates = JSON.parse(rawTemplates);
-        for (const t of templates) {
+        const plans = JSON.parse(rawTemplates); // localStorage key "templates" = Plans in new naming
+        for (const p of plans) {
           await run(
             `INSERT OR IGNORE INTO templates (id, name, description, version, updatedAt, data)
              VALUES (?, ?, ?, ?, ?, ?)`,
-            [t.id, t.name, t.description || '', t.version || 1, t.updatedAt || '', JSON.stringify(t.defaultItems || [])]
+            [p.id, p.name, p.description || '', p.version || 1, p.updatedAt || '', JSON.stringify(p.defaultItems || [])]
           );
         }
       } catch (_) { /* corrupt data — skip */ }
@@ -50,22 +67,27 @@ export async function migrateFromLocalStorage() {
 
     if (rawPlans) {
       try {
-        const plans = JSON.parse(rawPlans);
-        for (const p of plans) {
+        const trips = JSON.parse(rawPlans); // localStorage key "plans" = Trips in new naming
+        for (const t of trips) {
           await run(
             `INSERT OR IGNORE INTO plans (id, templateId, name, lastSyncedVersion, createdAt)
              VALUES (?, ?, ?, ?, ?)`,
-            [p.id, p.templateId || '', p.name, p.lastSyncedVersion || 1, p.createdAt || '']
+            [t.id, t.templateId || t.planId || '', t.name, t.lastSyncedVersion || 1, t.createdAt || '']
           );
-          for (const item of (p.items || [])) {
+          for (const item of (t.items || [])) {
             await run(
               `INSERT OR IGNORE INTO plan_items
                (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [item.planItemId, p.id, item.sourceTemplateId || null, item.sourceItemId || null,
-               item.name || '', item.importance || 'Medium', item.description || '',
-               item.size || '', item.weight || '', item.packed ? 1 : 0,
-               JSON.stringify(item.extraFields || {})]
+              [
+                item.tripItemId || item.planItemId,
+                t.id,
+                item.sourcePlanId || item.sourceTemplateId || null,
+                item.sourcePlanItemId || item.sourceItemId || null,
+                item.name || '', item.importance || 'Medium', item.description || '',
+                item.size || '', item.weight || '', item.packed ? 1 : 0,
+                JSON.stringify(item.extraFields || {}),
+              ]
             );
           }
         }
@@ -77,56 +99,57 @@ export async function migrateFromLocalStorage() {
   localStorage.removeItem('campfixer:plans');
 }
 
-// ─── Templates ────────────────────────────────────────────────────────────────
+// ─── Plans ────────────────────────────────────────────────────────────────────
+// A Plan is a reusable camping checklist. Stored in the `templates` DB table.
 
-// Seeds defaults on first launch if the table is empty; otherwise maps rows to objects.
-export async function loadTemplates() {
+// Seeds default Plans on first launch if the table is empty; otherwise maps rows to objects.
+export async function loadPlans() {
   const rows = await exec('SELECT * FROM templates ORDER BY rowid ASC');
   if (rows.length === 0) {
-    const seeds = createDefaultTemplates();
-    for (const t of seeds) await _insertTemplate(t);
+    const seeds = createDefaultPlans();
+    for (const p of seeds) await _insertPlan(p);
     return seeds;
   }
-  return rows.map(_rowToTemplate);
+  return rows.map(_rowToPlan);
 }
 
-// Replaces the entire templates table in a single transaction (used for bulk reorder/save).
-export async function saveTemplates(templates) {
+// Replaces the entire Plans table in a single transaction (used for bulk reorder/save).
+export async function savePlans(plans) {
   await transaction(async () => {
     await run('DELETE FROM templates');
-    for (const t of templates) await _insertTemplate(t);
+    for (const p of plans) await _insertPlan(p);
   });
 }
 
-// Validates and inserts a single new template; returns the cleaned object.
-export async function createTemplate(template) {
-  const clean = cleanTemplate(template);
-  await _insertTemplate(clean);
+// Validates and inserts a single new Plan; returns the cleaned object.
+export async function createPlan(plan) {
+  const clean = cleanPlan(plan);
+  await _insertPlan(clean);
   return clean;
 }
 
-// Bumps version and updatedAt, then upserts the updated template; returns the full list.
-export async function updateTemplate(updatedTemplate) {
-  const all = await loadTemplates();
-  const index = all.findIndex(t => t.id === updatedTemplate.id);
+// Bumps version and updatedAt, then upserts the updated Plan; returns the full list.
+export async function updatePlan(updatedPlan) {
+  const all = await loadPlans();
+  const index = all.findIndex(p => p.id === updatedPlan.id);
   if (index !== -1) {
-    const next = cleanTemplate(updatedTemplate);
+    const next = cleanPlan(updatedPlan);
     next.version = (all[index].version || 1) + 1;
     next.updatedAt = new Date().toISOString().split('T')[0];
     all[index] = next;
-    await _upsertTemplate(next);
+    await _upsertPlan(next);
   }
   return all;
 }
 
-// Deletes a template by id and returns the refreshed template list.
-export async function deleteTemplate(templateId) {
-  await run('DELETE FROM templates WHERE id = ?', [templateId]);
-  return loadTemplates();
+// Deletes a Plan by id and returns the refreshed Plan list.
+export async function deletePlan(planId) {
+  await run('DELETE FROM templates WHERE id = ?', [planId]);
+  return loadPlans();
 }
 
-// Maps a DB row to a template object, parsing the JSON-serialised item list.
-function _rowToTemplate(row) {
+// Maps a `templates` DB row to a Plan object, parsing the JSON-serialised item list.
+function _rowToPlan(row) {
   let defaultItems = [];
   try { defaultItems = JSON.parse(row.data); } catch (_) {}
   return {
@@ -139,60 +162,61 @@ function _rowToTemplate(row) {
   };
 }
 
-// Simple INSERT — used for bulk writes where conflicts are not expected.
-async function _insertTemplate(t) {
+// Simple INSERT into `templates` — used for bulk writes where conflicts are not expected.
+async function _insertPlan(p) {
   await run(
     `INSERT INTO templates (id, name, description, version, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)`,
-    [t.id, t.name, t.description || '', t.version || 1, t.updatedAt || '', JSON.stringify(t.defaultItems || [])]
+    [p.id, p.name, p.description || '', p.version || 1, p.updatedAt || '', JSON.stringify(p.defaultItems || [])]
   );
 }
 
-// INSERT OR REPLACE — used for single-record updates where a conflict means "overwrite".
-async function _upsertTemplate(t) {
+// INSERT OR REPLACE into `templates` — used for single-record updates (conflict = overwrite).
+async function _upsertPlan(p) {
   await run(
     `INSERT OR REPLACE INTO templates (id, name, description, version, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)`,
-    [t.id, t.name, t.description || '', t.version || 1, t.updatedAt || '', JSON.stringify(t.defaultItems || [])]
+    [p.id, p.name, p.description || '', p.version || 1, p.updatedAt || '', JSON.stringify(p.defaultItems || [])]
   );
 }
 
-// ─── Plans ────────────────────────────────────────────────────────────────────
+// ─── Trips ────────────────────────────────────────────────────────────────────
+// A Trip is a specific outing created from a Plan. Stored in the `plans` DB table.
 
-// Loads all plans, fetching each plan's items in a per-plan query.
-export async function loadPlans() {
-  const plans = await exec('SELECT * FROM plans ORDER BY rowid ASC');
+// Loads all Trips, fetching each Trip's TripItems in a per-trip query.
+export async function loadTrips() {
+  const trips = await exec('SELECT * FROM plans ORDER BY rowid ASC');
   const result = [];
-  for (const p of plans) {
+  for (const t of trips) {
     const items = await exec(
       `SELECT * FROM plan_items WHERE planId = ? ORDER BY rowid ASC`,
-      [p.id]
+      [t.id]
     );
-    result.push(_rowToPlan(p, items));
+    result.push(_rowToTrip(t, items));
   }
   return result;
 }
 
-// Replaces all plans and their items in a single transaction (used for bulk reorder/save).
-export async function savePlans(plans) {
+// Replaces all Trips and their TripItems in a single transaction (used for bulk reorder/save).
+export async function saveTrips(trips) {
   await transaction(async () => {
     await run('DELETE FROM plan_items');
     await run('DELETE FROM plans');
-    for (const p of plans) {
+    for (const t of trips) {
       await run(
         `INSERT INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-        [p.id, p.templateId || '', p.name, p.lastSyncedVersion || 1, p.createdAt || '']
+        [t.id, t.planId || '', t.name, t.lastSyncedVersion || 1, t.createdAt || '']
       );
-      for (const item of (p.items || [])) await _insertPlanItem(item, p.id);
+      for (const item of (t.items || [])) await _insertTripItem(item, t.id);
     }
   });
 }
 
-// Copies template.defaultItems into plan items, recording sourceItemId on each so
-// future syncs can identify which template items are already present in the plan.
-export async function createPlanFromTemplate(template, planName) {
-  const items = (template.defaultItems || []).map(item => ({
-    planItemId: generateId('plan'),
-    sourceTemplateId: template.id,
-    sourceItemId: item.id,
+// Copies Plan.defaultItems into TripItems, recording sourcePlanItemId on each so
+// future syncs can identify which Plan items are already present in the Trip.
+export async function createTripFromPlan(plan, tripName) {
+  const items = (plan.defaultItems || []).map(item => ({
+    tripItemId: generateId('trip'),
+    sourcePlanId: plan.id,
+    sourcePlanItemId: item.id,
     name: item.name,
     importance: item.importance,
     description: item.description,
@@ -203,64 +227,64 @@ export async function createPlanFromTemplate(template, planName) {
   }));
 
   return {
-    id: generateId('plan'),
-    name: planName || `${template.name} plan`,
-    templateId: template.id,
+    id: generateId('trip'),
+    name: tripName || `${plan.name} trip`,
+    planId: plan.id,
     createdAt: new Date().toISOString(),
-    lastSyncedVersion: template.version || 1,
+    lastSyncedVersion: plan.version || 1,
     items,
   };
 }
 
-// Persists a new plan with all its items; returns the refreshed plan list.
-export async function addPlan(plan) {
+// Persists a new Trip with all its TripItems; returns the refreshed Trip list.
+export async function addTrip(trip) {
   await transaction(async () => {
     await run(
       `INSERT INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-      [plan.id, plan.templateId || '', plan.name, plan.lastSyncedVersion || 1, plan.createdAt || '']
+      [trip.id, trip.planId || '', trip.name, trip.lastSyncedVersion || 1, trip.createdAt || '']
     );
-    for (const item of (plan.items || [])) await _insertPlanItem(item, plan.id);
+    for (const item of (trip.items || [])) await _insertTripItem(item, trip.id);
   });
-  return loadPlans();
+  return loadTrips();
 }
 
-// Replaces a plan's header row and all its items (used for edits and post-sync saves).
-export async function updatePlan(plan) {
+// Replaces a Trip's header row and all its TripItems (used for edits and post-sync saves).
+export async function updateTrip(trip) {
   await transaction(async () => {
     await run(
       `INSERT OR REPLACE INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-      [plan.id, plan.templateId || '', plan.name, plan.lastSyncedVersion || 1, plan.createdAt || '']
+      [trip.id, trip.planId || '', trip.name, trip.lastSyncedVersion || 1, trip.createdAt || '']
     );
-    await run('DELETE FROM plan_items WHERE planId = ?', [plan.id]);
-    for (const item of (plan.items || [])) await _insertPlanItem(item, plan.id);
+    await run('DELETE FROM plan_items WHERE planId = ?', [trip.id]);
+    for (const item of (trip.items || [])) await _insertTripItem(item, trip.id);
   });
-  return loadPlans();
+  return loadTrips();
 }
 
-// Deletes a plan and all its items; returns the refreshed plan list.
-export async function deletePlan(planId) {
+// Deletes a Trip and all its TripItems; returns the refreshed Trip list.
+export async function deleteTrip(tripId) {
   await transaction(async () => {
-    await run('DELETE FROM plan_items WHERE planId = ?', [planId]);
-    await run('DELETE FROM plans WHERE id = ?', [planId]);
+    await run('DELETE FROM plan_items WHERE planId = ?', [tripId]);
+    await run('DELETE FROM plans WHERE id = ?', [tripId]);
   });
-  return loadPlans();
+  return loadTrips();
 }
 
 // ─── Sync logic ───────────────────────────────────────────────────────────────
 
-// One-way pull: appends any template items the plan doesn't already have.
-// Matching is done by sourceItemId, NOT by name — so a renamed template item
-// is still considered "already in the plan" as long as its id is present.
-// Updates lastSyncedVersion to the template's current version.
-// Does not persist — caller must await updatePlan(plan) afterwards.
-export async function syncPlanWithTemplate(plan, template) {
-  const existingSourceIds = new Set(plan.items.map(i => i.sourceItemId).filter(Boolean));
-  const newItems = (template.defaultItems || [])
+// One-way pull: appends any Plan items the Trip doesn't already have.
+// Matching is done by sourcePlanItemId, NOT by name — so a renamed Plan item
+// is still considered "already in the Trip" as long as its id is present.
+// Updates lastSyncedVersion to the Plan's current version.
+// Does not persist — caller must await updateTrip(trip) afterwards.
+export async function syncTripWithPlan(trip, plan) {
+  const existingSourceIds = new Set(trip.items.map(i => i.sourcePlanItemId).filter(Boolean));
+  const newItems = (plan.defaultItems || [])
     .filter(item => !existingSourceIds.has(item.id))
     .map(item => ({
-      planItemId: generateId('plan'),
-      sourceTemplateId: template.id,
-      sourceItemId: item.id,
+      tripItemId: generateId('trip'),
+      sourcePlanId: plan.id,
+      sourcePlanItemId: item.id,
       name: item.name,
       importance: item.importance,
       description: item.description,
@@ -270,33 +294,33 @@ export async function syncPlanWithTemplate(plan, template) {
       extraFields: item.extraFields || {},
     }));
 
-  if (newItems.length > 0) plan.items = [...plan.items, ...newItems];
-  plan.lastSyncedVersion = template.version || plan.lastSyncedVersion;
-  return plan;
+  if (newItems.length > 0) trip.items = [...trip.items, ...newItems];
+  trip.lastSyncedVersion = plan.version || trip.lastSyncedVersion;
+  return trip;
 }
 
-// One-way push: promotes plan-exclusive items to the template so future plans
-// and syncs can include them.  A plan item is "plan-exclusive" when it has no
-// sourceItemId, or its sourceItemId doesn't match any current template item
-// (meaning the source item was deleted from the template after the plan was made).
+// One-way push: promotes Trip-exclusive items back to the Plan so future Trips
+// and syncs can include them.  A TripItem is "Trip-exclusive" when it has no
+// sourcePlanItemId, or its sourcePlanItemId doesn't match any current Plan item
+// (meaning the source item was deleted from the Plan after the Trip was made).
 //
-// After pushing, each promoted plan item receives a new sourceItemId pointing to
-// the freshly created template item — this prevents future syncs from re-adding
-// the same item again.  template.version is bumped so other plans can detect the
+// After pushing, each promoted TripItem receives a new sourcePlanItemId pointing
+// to the freshly created Plan item — this prevents future syncs from re-adding
+// the same item again.  plan.version is bumped so other Trips can detect the
 // new items via their lastSyncedVersion comparison.
 //
-// Returns { template, plan, addedCount }.  Caller must persist both objects:
-//   await updateTemplate(result.template);
+// Returns { plan, trip, addedCount }.  Caller must persist both objects:
 //   await updatePlan(result.plan);
-export async function pushPlanItemsToTemplate(plan, template) {
-  const existingIds = new Set(template.defaultItems.map(i => i.id));
-  const itemsToAdd = plan.items.filter(
-    item => !item.sourceItemId || !existingIds.has(item.sourceItemId)
+//   await updateTrip(result.trip);
+export async function pushTripItemsToPlan(trip, plan) {
+  const existingIds = new Set(plan.defaultItems.map(i => i.id));
+  const itemsToAdd = trip.items.filter(
+    item => !item.sourcePlanItemId || !existingIds.has(item.sourcePlanItemId)
   );
 
-  if (itemsToAdd.length === 0) return { template, plan, addedCount: 0 };
+  if (itemsToAdd.length === 0) return { plan, trip, addedCount: 0 };
 
-  const newTemplateItems = itemsToAdd.map(item => ({
+  const newPlanItems = itemsToAdd.map(item => ({
     id: generateId('item'),
     name: item.name,
     importance: item.importance,
@@ -306,46 +330,46 @@ export async function pushPlanItemsToTemplate(plan, template) {
     extraFields: item.extraFields || {},
   }));
 
-  // Map each original planItemId to its newly assigned template item id so we
-  // can back-fill sourceItemId on the plan without a second array scan.
-  const idMap = new Map(itemsToAdd.map((item, i) => [item.planItemId, newTemplateItems[i].id]));
-
-  const updatedTemplate = {
-    ...template,
-    defaultItems: [...template.defaultItems, ...newTemplateItems],
-    version: (template.version || 1) + 1,
-    updatedAt: new Date().toISOString().split('T')[0],
-  };
+  // Map each original tripItemId to its newly assigned Plan item id so we
+  // can back-fill sourcePlanItemId on the Trip without a second array scan.
+  const idMap = new Map(itemsToAdd.map((item, i) => [item.tripItemId, newPlanItems[i].id]));
 
   const updatedPlan = {
     ...plan,
-    items: plan.items.map(item => {
-      const newSourceItemId = idMap.get(item.planItemId);
-      if (!newSourceItemId) return item;
-      return { ...item, sourceItemId: newSourceItemId, sourceTemplateId: template.id };
-    }),
-    lastSyncedVersion: updatedTemplate.version,
+    defaultItems: [...plan.defaultItems, ...newPlanItems],
+    version: (plan.version || 1) + 1,
+    updatedAt: new Date().toISOString().split('T')[0],
   };
 
-  return { template: updatedTemplate, plan: updatedPlan, addedCount: newTemplateItems.length };
+  const updatedTrip = {
+    ...trip,
+    items: trip.items.map(item => {
+      const newSourcePlanItemId = idMap.get(item.tripItemId);
+      if (!newSourcePlanItemId) return item;
+      return { ...item, sourcePlanItemId: newSourcePlanItemId, sourcePlanId: plan.id };
+    }),
+    lastSyncedVersion: updatedPlan.version,
+  };
+
+  return { plan: updatedPlan, trip: updatedTrip, addedCount: newPlanItems.length };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Maps a plans row + its plan_items rows to a plain JS plan object.
+// Maps a `plans` DB row + its `plan_items` rows to a plain JS Trip object.
 // SQLite stores booleans as 0/1 integers, so packed is coerced to boolean here.
-function _rowToPlan(row, itemRows) {
+function _rowToTrip(row, itemRows) {
   return {
     id: row.id,
-    templateId: row.templateId,
+    planId: row.templateId,        // DB column: templateId → in-memory: planId
     name: row.name,
     lastSyncedVersion: row.lastSyncedVersion,
     createdAt: row.createdAt,
     items: itemRows.map(r => ({
-      planItemId: r.planItemId,
-      planId: r.planId,
-      sourceTemplateId: r.sourceTemplateId || null,
-      sourceItemId: r.sourceItemId || null,
+      tripItemId: r.planItemId,            // DB column: planItemId   → tripItemId
+      tripId: r.planId,                    // DB column: planId       → tripId
+      sourcePlanId: r.sourceTemplateId || null,  // DB column: sourceTemplateId → sourcePlanId
+      sourcePlanItemId: r.sourceItemId || null,  // DB column: sourceItemId     → sourcePlanItemId
       name: r.name,
       importance: r.importance,
       description: r.description,
@@ -357,13 +381,19 @@ function _rowToPlan(row, itemRows) {
   };
 }
 
-async function _insertPlanItem(item, planId) {
+// Inserts a TripItem into `plan_items`, mapping in-memory names back to DB column names.
+async function _insertTripItem(item, tripId) {
   await run(
     `INSERT INTO plan_items (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [item.planItemId, planId, item.sourceTemplateId || null, item.sourceItemId || null,
-     item.name || '', item.importance || 'Medium', item.description || '',
-     item.size || '', item.weight || '', item.packed ? 1 : 0,
-     JSON.stringify(item.extraFields || {})]
+    [
+      item.tripItemId,                   // DB column: planItemId
+      tripId,                            // DB column: planId
+      item.sourcePlanId || null,         // DB column: sourceTemplateId
+      item.sourcePlanItemId || null,     // DB column: sourceItemId
+      item.name || '', item.importance || 'Medium', item.description || '',
+      item.size || '', item.weight || '', item.packed ? 1 : 0,
+      JSON.stringify(item.extraFields || {}),
+    ]
   );
 }
