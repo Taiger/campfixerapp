@@ -3,11 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; worker-src 'self'; manifest-src 'self'; base-uri 'self'; object-src 'none';" />
   <title>Campfixer</title>
-  <!-- Caveat for logo wordmark; Nunito for body and workflow UI -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#F5F0E8" id="meta-theme-color" />
@@ -19,20 +17,8 @@
   -->
   <script src="coi-serviceworker.js" defer></script>
 
-  <!--
-    Apply the saved theme BEFORE the page renders to prevent a flash of the
-    wrong theme. Must run synchronously in <head>.
-    Falls back to the system preference if nothing is stored.
-  -->
-  <script>
-    (function () {
-      var stored = localStorage.getItem('campfixer:theme');
-      var sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (stored === 'dark' || (!stored && sysDark)) {
-        document.documentElement.classList.add('dark');
-      }
-    })();
-  </script>
+  <!-- Apply saved theme before first paint to avoid a colour flash. -->
+  <script src="src/theme-init.js"></script>
 </head>
 <body class="bg-aged-paper dark:bg-dark-moss text-stone-900 dark:text-stone-100 min-h-screen transition-colors duration-200 font-body pb-20">
 
@@ -78,6 +64,7 @@
     </svg>
   </button>
 
+  <div id="app-modal"></div>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

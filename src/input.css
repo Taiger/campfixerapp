@@ -1,3 +1,41 @@
+/* ─── Self-hosted fonts ──────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/nunito-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/nunito-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/nunito-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('fonts/nunito-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('fonts/caveat-700.woff2') format('woff2');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -465,6 +503,26 @@
   }
   .menu-action.danger-armed {
     @apply bg-camp-amber/15 text-camp-amber hover:bg-camp-amber/20;
+  }
+
+  /* ─── Modal ────────────────────────────────────────────────────── */
+
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center
+           bg-stone-900/50 backdrop-blur-sm animate-fade-in
+           sm:items-center sm:p-4;
+  }
+  .modal-card {
+    @apply w-full rounded-t-2xl bg-off-white px-5 pb-8 pt-5 shadow-xl
+           border border-stone-200 animate-slide-up
+           dark:bg-dark-moss dark:border-forest-green/30
+           sm:rounded-2xl sm:max-w-xs sm:pb-5;
+  }
+  .modal-message {
+    @apply text-sm leading-relaxed text-stone-700 dark:text-stone-200 mb-5;
+  }
+  .modal-actions {
+    @apply flex justify-end gap-2;
   }
 
   /* ─── Tooltips ─────────────────────────────────────────────────── */

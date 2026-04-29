@@ -44,7 +44,51 @@ const state = {
 
 const elements = {
   main: document.getElementById('app-main'),
+  modal: document.getElementById('app-modal'),
 };
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+let _modalResolve = null;
+
+function _renderModal(config) {
+  if (!elements.modal) return;
+  if (!config) { render(html``, elements.modal); return; }
+  render(html`
+    <div class="modal-backdrop" @click=${() => _dismissModal(false)}>
+      <div class="modal-card" @click=${e => e.stopPropagation()}>
+        <p class="modal-message">${config.message}</p>
+        <div class="modal-actions">
+          ${config.type === 'confirm' ? html`
+            <button class="btn-secondary" @click=${() => _dismissModal(false)}>Cancel</button>
+          ` : ''}
+          <button class="${config.type === 'confirm' ? 'btn-danger' : 'btn-primary'}"
+                  @click=${() => _dismissModal(true)}>
+            ${config.type === 'confirm' ? 'Delete' : 'OK'}
+          </button>
+        </div>
+      </div>
+    </div>`, elements.modal);
+}
+
+function _dismissModal(result) {
+  _renderModal(null);
+  if (_modalResolve) { _modalResolve(result); _modalResolve = null; }
+}
+
+function showAlert(message) {
+  return new Promise(resolve => {
+    _modalResolve = resolve;
+    _renderModal({ type: 'alert', message });
+  });
+}
+
+function showConfirm(message) {
+  return new Promise(resolve => {
+    _modalResolve = resolve;
+    _renderModal({ type: 'confirm', message });
+  });
+}
 
 // ─── Core helpers ─────────────────────────────────────────────────────────────
 
@@ -502,9 +546,11 @@ function toggleExpandedTripItem(index) {
 
 async function persistEditingTripDraft() {
   if (!state.editingTrip) return;
+  const url = state.editingTrip.locationUrl || '';
   const draft = {
     ...state.editingTrip,
     items: state.editingTrip.items.map(finalizeItem),
+    locationUrl: /^https?:\/\//i.test(url) ? url : '',
   };
   state.trips = await updateTrip(draft);
   state.activeTrip = state.trips.find(t => t.id === draft.id) || draft;
@@ -558,7 +604,7 @@ async function syncTripNow() {
   const trip = state.editingTrip;
   if (!trip) return;
   const plan = state.plans.find(p => p.id === trip.planId);
-  if (!plan) { alert('Plan source not available.'); return; }
+  if (!plan) { await showAlert('Plan source not available.'); return; }
   trip.items = trip.items.map(finalizeItem);
   await syncTripWithPlan(trip, plan);
   state.trips = await updateTrip(trip);
@@ -570,15 +616,15 @@ async function pushTripNow() {
   const trip = state.editingTrip;
   if (!trip) return;
   const plan = state.plans.find(p => p.id === trip.planId);
-  if (!plan) { alert('Plan source not available.'); return; }
+  if (!plan) { await showAlert('Plan source not available.'); return; }
   trip.items = trip.items.map(finalizeItem);
   const result = await pushTripItemsToPlan(trip, plan);
-  if (result.addedCount === 0) { alert('No new items to add to the plan.'); return; }
+  if (result.addedCount === 0) { await showAlert('No new items to add to the plan.'); return; }
   const pIdx = state.plans.findIndex(p => p.id === result.plan.id);
   if (pIdx !== -1) state.plans[pIdx] = result.plan;
   await savePlans(state.plans);
   state.trips = await updateTrip(result.trip);
-  alert(`Added ${result.addedCount} item(s) to "${result.plan.name}".`);
+  await showAlert(`Added ${result.addedCount} item(s) to "${result.plan.name}".`);
   enterTripDetail(state.trips.find(t => t.id === result.trip.id) || result.trip);
 }
 
@@ -800,9 +846,9 @@ function tripCreatorTemplate() {
           const form = elements.main.querySelector('#create-trip-form');
           const tripName = form.tripName.value.trim();
           const planId = form.planId.value;
-          if (!tripName) { alert('Please enter a trip name.'); return; }
+          if (!tripName) { await showAlert('Please enter a trip name.'); return; }
           const plan = state.plans.find(p => p.id === planId);
-          if (!plan) { alert('Please choose a valid plan.'); return; }
+          if (!plan) { await showAlert('Please choose a valid plan.'); return; }
           const trip = await createTripFromPlan(plan, tripName);
           state.trips = await addTrip(trip);
           enterTripDetail(trip);
@@ -1041,7 +1087,7 @@ function planEditorTemplate() {
         <button @click=${saveEditingPlan} class="btn-primary">Save plan</button>
         <button @click=${async () => {
           if (!p.id) { renderView('config'); return; }
-          if (confirm('Delete this plan?')) {
+          if (await showConfirm('Delete this plan?')) {
             state.plans = await deletePlan(p.id);
             state.editingPlan = null;
             renderView('config');
