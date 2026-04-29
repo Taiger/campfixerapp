@@ -18,7 +18,7 @@ module.exports = {
         'off-white':    '#F8F4EC',
       },
       fontFamily: {
-        'display': ['"Playfair Display"', 'Georgia', 'serif'],
+        'display': ['Nunito', 'system-ui', 'sans-serif'],
         'body':    ['Nunito', 'system-ui', 'sans-serif'],
       },
       keyframes: {

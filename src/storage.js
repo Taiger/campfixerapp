@@ -43,62 +43,6 @@
 import { exec, run, transaction } from './db.js';
 import { createDefaultPlans, cleanPlan, generateId } from './templates.js';
 
-// ─── Migration ────────────────────────────────────────────────────────────────
-
-// On first boot, migrate any data from localStorage into SQLite, then clear it.
-export async function migrateFromLocalStorage() {
-  const rawTemplates = localStorage.getItem('campfixer:templates');
-  const rawPlans = localStorage.getItem('campfixer:plans');
-  if (!rawTemplates && !rawPlans) return;
-
-  await transaction(async () => {
-    if (rawTemplates) {
-      try {
-        const plans = JSON.parse(rawTemplates); // localStorage key "templates" = Plans in new naming
-        for (const p of plans) {
-          await run(
-            `INSERT OR IGNORE INTO templates (id, name, description, version, updatedAt, data)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [p.id, p.name, p.description || '', p.version || 1, p.updatedAt || '', JSON.stringify(p.defaultItems || [])]
-          );
-        }
-      } catch (_) { /* corrupt data — skip */ }
-    }
-
-    if (rawPlans) {
-      try {
-        const trips = JSON.parse(rawPlans); // localStorage key "plans" = Trips in new naming
-        for (const t of trips) {
-          await run(
-            `INSERT OR IGNORE INTO plans (id, templateId, name, lastSyncedVersion, createdAt)
-             VALUES (?, ?, ?, ?, ?)`,
-            [t.id, t.templateId || t.planId || '', t.name, t.lastSyncedVersion || 1, t.createdAt || '']
-          );
-          for (const item of (t.items || [])) {
-            await run(
-              `INSERT OR IGNORE INTO plan_items
-               (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [
-                item.tripItemId || item.planItemId,
-                t.id,
-                item.sourcePlanId || item.sourceTemplateId || null,
-                item.sourcePlanItemId || item.sourceItemId || null,
-                item.name || '', item.importance || 'Medium', item.description || '',
-                item.size || '', item.weight || '', item.packed ? 1 : 0,
-                JSON.stringify(item.extraFields || {}),
-              ]
-            );
-          }
-        }
-      } catch (_) { /* corrupt data — skip */ }
-    }
-  });
-
-  localStorage.removeItem('campfixer:templates');
-  localStorage.removeItem('campfixer:plans');
-}
-
 // ─── Plans ────────────────────────────────────────────────────────────────────
 // A Plan is a reusable camping checklist. Stored in the `templates` DB table.
 
@@ -202,8 +146,13 @@ export async function saveTrips(trips) {
     await run('DELETE FROM plans');
     for (const t of trips) {
       await run(
-        `INSERT INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-        [t.id, t.planId || '', t.name, t.lastSyncedVersion || 1, t.createdAt || '']
+        `INSERT INTO plans
+         (id, templateId, name, startDate, endDate, locationUrl, description, lastSyncedVersion, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          t.id, t.planId || '', t.name, t.startDate || '', t.endDate || '',
+          t.locationUrl || '', t.description || '', t.lastSyncedVersion || 1, t.createdAt || '',
+        ]
       );
       for (const item of (t.items || [])) await _insertTripItem(item, t.id);
     }
@@ -230,6 +179,10 @@ export async function createTripFromPlan(plan, tripName) {
     id: generateId('trip'),
     name: tripName || `${plan.name} trip`,
     planId: plan.id,
+    startDate: '',
+    endDate: '',
+    locationUrl: '',
+    description: '',
     createdAt: new Date().toISOString(),
     lastSyncedVersion: plan.version || 1,
     items,
@@ -240,8 +193,13 @@ export async function createTripFromPlan(plan, tripName) {
 export async function addTrip(trip) {
   await transaction(async () => {
     await run(
-      `INSERT INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-      [trip.id, trip.planId || '', trip.name, trip.lastSyncedVersion || 1, trip.createdAt || '']
+      `INSERT INTO plans
+       (id, templateId, name, startDate, endDate, locationUrl, description, lastSyncedVersion, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        trip.id, trip.planId || '', trip.name, trip.startDate || '', trip.endDate || '',
+        trip.locationUrl || '', trip.description || '', trip.lastSyncedVersion || 1, trip.createdAt || '',
+      ]
     );
     for (const item of (trip.items || [])) await _insertTripItem(item, trip.id);
   });
@@ -252,8 +210,13 @@ export async function addTrip(trip) {
 export async function updateTrip(trip) {
   await transaction(async () => {
     await run(
-      `INSERT OR REPLACE INTO plans (id, templateId, name, lastSyncedVersion, createdAt) VALUES (?, ?, ?, ?, ?)`,
-      [trip.id, trip.planId || '', trip.name, trip.lastSyncedVersion || 1, trip.createdAt || '']
+      `INSERT OR REPLACE INTO plans
+       (id, templateId, name, startDate, endDate, locationUrl, description, lastSyncedVersion, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        trip.id, trip.planId || '', trip.name, trip.startDate || '', trip.endDate || '',
+        trip.locationUrl || '', trip.description || '', trip.lastSyncedVersion || 1, trip.createdAt || '',
+      ]
     );
     await run('DELETE FROM plan_items WHERE planId = ?', [trip.id]);
     for (const item of (trip.items || [])) await _insertTripItem(item, trip.id);
@@ -363,6 +326,10 @@ function _rowToTrip(row, itemRows) {
     id: row.id,
     planId: row.templateId,        // DB column: templateId → in-memory: planId
     name: row.name,
+    startDate: row.startDate || '',
+    endDate: row.endDate || '',
+    locationUrl: row.locationUrl || '',
+    description: row.description || '',
     lastSyncedVersion: row.lastSyncedVersion,
     createdAt: row.createdAt,
     items: itemRows.map(r => ({

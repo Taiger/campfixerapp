@@ -39,7 +39,7 @@ All data is stored locally in the browser using **SQLite WASM + OPFS** — no se
 
 ```
 main thread
-  └─ main.js            bootstrap: initDB → migrate → initApp
+  └─ main.js            bootstrap: initDB → initApp
   └─ app.js             UI: render functions, event handlers, in-memory state
   └─ storage.js         CRUD + sync helpers; calls db.js
   └─ db.js              promiser bridge → sqlite3-worker1.mjs

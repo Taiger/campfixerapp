@@ -10,8 +10,8 @@
 
   /* Form controls inherit the right background and text for both themes. */
   input, textarea, select {
-    @apply w-full rounded-xl border border-stone-200 dark:border-forest-green/40
-           bg-off-white dark:bg-forest-green/10 px-3 py-2 text-sm
+    @apply w-full rounded-lg border border-stone-200 dark:border-forest-green/40
+           bg-white dark:bg-forest-green/10 px-3 py-2.5 text-sm
            text-stone-900 dark:text-stone-100
            transition-colors duration-150;
     font: inherit;
@@ -36,8 +36,8 @@
 
   /* Primary action: Save, Create, Open */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3.5 py-2.5 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-forest-green text-white hover:bg-forest-green/80;
     font: inherit;
@@ -45,8 +45,8 @@
 
   /* Secondary / navigation: Back, Edit, Duplicate */
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3.5 py-2.5 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-stone-200 text-stone-800 hover:bg-stone-300
            dark:bg-forest-green/20 dark:text-stone-100 dark:hover:bg-forest-green/30;
@@ -55,8 +55,8 @@
 
   /* Destructive: Delete */
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3.5 py-2.5 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-ember-red text-white hover:bg-ember-red/80;
     font: inherit;
@@ -64,8 +64,8 @@
 
   /* Armed state: first tap — switches to amber to signal "tap again to confirm" */
   .btn-danger-armed {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3.5 py-2.5 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-camp-amber text-white hover:bg-camp-amber/80;
     font: inherit;
@@ -73,8 +73,8 @@
 
   /* Sync: template → plan */
   .btn-sync {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3 py-2 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-sage-green text-white hover:bg-sage-green/80;
     font: inherit;
@@ -82,8 +82,8 @@
 
   /* Push: plan → template */
   .btn-push {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-full
-           px-4 py-2 text-sm font-medium border-0 cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg
+           px-3.5 py-2.5 text-sm font-semibold border-0 cursor-pointer select-none
            transition-all duration-150 active:scale-95
            bg-camp-amber text-white hover:bg-camp-amber/80;
     font: inherit;
@@ -91,7 +91,7 @@
 
   /* Small square icon buttons: theme toggle */
   .btn-icon {
-    @apply flex h-9 w-9 items-center justify-center rounded-full text-base
+    @apply flex h-9 w-9 items-center justify-center rounded-lg text-base
            border-0 cursor-pointer select-none transition-colors duration-150
            bg-stone-200 text-stone-800 hover:bg-stone-300
            dark:bg-forest-green/20 dark:text-stone-200 dark:hover:bg-forest-green/30;
@@ -102,11 +102,14 @@
 
   .logo-brand {
     font-family: 'Caveat', cursive;
-    font-size: 1.875rem;
+    font-size: 1.75rem;
     font-weight: 700;
     letter-spacing: -0.01em;
     color: rgb(44, 74, 62);
+    text-decoration: none;
+    line-height: 1;
   }
+  .logo-brand:focus-visible { @apply outline-none ring-2 ring-forest-green dark:ring-sage-green rounded-md; }
   .dark .logo-brand        { color: rgb(120, 175, 140); }
   .logo-brand .logo-accent { color: rgb(74, 155, 142);  }
   .dark .logo-brand .logo-accent { color: rgb(90, 180, 165); }
@@ -117,7 +120,7 @@
     @apply fixed bottom-0 left-0 right-0 z-40
            flex items-stretch justify-around
            border-t border-stone-200 dark:border-forest-green/30
-           bg-off-white dark:bg-dark-moss;
+           bg-off-white/95 dark:bg-dark-moss/95 backdrop-blur;
   }
 
   .bottom-nav-btn {
@@ -146,20 +149,26 @@
   /* ─── Trip Card (Rich Card) ─────────────────────────────────────── */
 
   .trip-card {
-    @apply rounded-2xl bg-off-white dark:bg-forest-green/10
+    @apply rounded-xl bg-off-white dark:bg-forest-green/10
            border border-stone-200 dark:border-forest-green/20
-           overflow-hidden shadow-sm cursor-pointer
+           overflow-hidden cursor-pointer
            transition-all duration-150 active:scale-[0.99];
   }
+  .trip-card:hover { @apply border-forest-green/30 dark:border-sage-green/30; }
   .trip-card-header {
-    @apply flex items-center gap-3 p-4
-           border-b border-stone-100 dark:border-forest-green/15;
+    @apply flex items-center gap-3 px-4 pt-4 pb-3;
+  }
+  .trip-card-icon {
+    @apply flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg
+           bg-forest-green/10 text-forest-green dark:bg-forest-green/20 dark:text-sage-green;
+  }
+  .trip-card-icon svg {
+    @apply h-5 w-5;
   }
   .trip-card-title {
-    font-family: 'Playfair Display', serif;
-    @apply text-lg font-bold text-forest-green dark:text-sage-green leading-tight;
+    @apply text-base font-bold text-stone-900 dark:text-stone-100 leading-tight;
   }
-  .trip-card-body  { @apply p-4; }
+  .trip-card-body  { @apply px-4 pb-3; }
   .trip-card-footer { @apply px-4 pb-4 text-xs text-stone-400 dark:text-stone-500; }
 
   /* ─── Progress Bar ──────────────────────────────────────────────── */
@@ -174,8 +183,9 @@
   /* ─── Importance Badges ─────────────────────────────────────────── */
 
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium;
   }
+  .badge-dot { @apply h-2 w-2 rounded-full bg-current; }
   .badge-high   { @apply bg-ember-red/10 text-ember-red; }
   .badge-medium { @apply bg-camp-amber/15 text-camp-amber dark:bg-camp-amber/20; }
   .badge-low    { @apply bg-sage-green/15 text-sage-green dark:bg-sage-green/20; }
@@ -184,30 +194,69 @@
 
   /* Wraps condensed row + optional inline expanded form; owns the separator border. */
   .item-row-wrap {
-    @apply border-b border-stone-100 dark:border-forest-green/10 last:border-b-0;
+    @apply border-b border-stone-200/70 dark:border-forest-green/10 last:border-b-0;
   }
 
   /* Inline edit form that expands below a condensed row. */
   .item-expand {
-    @apply pt-1 pb-4 px-1 grid gap-3;
+    @apply mb-3 ml-12 mr-1 mt-1;
+  }
+  .item-edit-card {
+    @apply rounded-lg border border-stone-200/80 bg-stone-50/70 p-2.5
+           dark:border-forest-green/20 dark:bg-forest-green/5;
+  }
+  .item-edit-header {
+    @apply mb-2 flex items-center justify-between gap-2 border-b border-stone-200/70 pb-2
+           text-xs font-bold uppercase tracking-wide text-stone-500
+           dark:border-forest-green/20 dark:text-stone-400;
+  }
+  .item-edit-close {
+    @apply flex h-7 w-7 items-center justify-center rounded-md text-stone-400
+           hover:bg-stone-200 hover:text-stone-700
+           dark:hover:bg-forest-green/20 dark:hover:text-stone-100;
+    background: transparent;
+  }
+  .item-edit-close svg {
+    @apply h-4 w-4;
+  }
+  .item-edit-grid,
+  .trip-details-grid {
+    @apply grid grid-cols-2 gap-2;
+  }
+  .span-2 {
+    @apply col-span-2;
+  }
+  .compact-field {
+    @apply gap-0.5 text-[11px] font-bold uppercase tracking-wide text-stone-500 dark:text-stone-400;
+  }
+  .compact-field input,
+  .compact-field select,
+  .compact-field textarea {
+    @apply mt-0.5 rounded-md px-2.5 py-1.5 text-sm font-medium normal-case tracking-normal;
+  }
+  .compact-field textarea {
+    @apply min-h-14;
+  }
+  .compact-label {
+    @apply mb-0.5 text-[11px] font-bold uppercase tracking-wide text-stone-500 dark:text-stone-400;
   }
 
   .check-row {
-    @apply flex items-center gap-3 py-3;
+    @apply flex items-center gap-3 py-2.5;
   }
   .check-box {
-    @apply flex-shrink-0 rounded-lg border-2 border-stone-300 dark:border-forest-green/40
+    @apply flex-shrink-0 rounded-lg border-2 border-stone-300 dark:border-forest-green/50
            flex items-center justify-center transition-all duration-150 bg-transparent;
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
   }
   .check-box.checked {
     @apply border-forest-green bg-forest-green text-white
            dark:border-sage-green dark:bg-sage-green;
   }
   .check-row-label {
-    @apply flex-1 text-sm font-medium text-stone-800 dark:text-stone-200;
+    @apply flex-1 bg-transparent p-0 text-left text-base font-semibold text-stone-800 dark:text-stone-200;
   }
   .check-row-label.packed {
     @apply line-through text-stone-400 dark:text-stone-500;
@@ -216,12 +265,11 @@
   /* ─── Collapsible Section (plan-detail) ─────────────────────────── */
 
   .section-group {
-    @apply mb-2;
+    @apply mb-1;
   }
   .section-group summary {
-    @apply flex items-center justify-between py-3 cursor-pointer select-none
+    @apply flex items-center justify-between py-2 cursor-pointer select-none
            font-semibold text-stone-700 dark:text-stone-300;
-    font-family: 'Playfair Display', serif;
     list-style: none;
   }
   .section-group summary::-webkit-details-marker { display: none; }
@@ -229,7 +277,23 @@
 
   /* ─── Bottom Sheet ──────────────────────────────────────────────── */
 
-  /* Link-styled button for inline "go to Config" nudges (no Plans yet, etc.). */
+  .section-label {
+    @apply inline-flex items-center gap-2 text-sm uppercase tracking-wide text-stone-600 dark:text-stone-300;
+  }
+  .section-label::before {
+    content: '';
+    @apply h-2.5 w-2.5 rounded-full bg-stone-400;
+  }
+  .section-label.priority-high::before { @apply bg-ember-red; }
+  .section-label.priority-medium::before { @apply bg-camp-amber; }
+  .section-label.priority-low::before { @apply bg-sage-green; }
+  .section-label.priority-packed { @apply text-stone-400 dark:text-stone-500; }
+  .section-count {
+    @apply rounded-full bg-stone-200 px-2 py-0.5 text-xs font-semibold normal-case tracking-normal
+           text-stone-600 dark:bg-forest-green/25 dark:text-stone-300;
+  }
+
+  /* Link-styled button for inline Settings nudges (no Plans yet, etc.). */
   .inline-link {
     @apply text-forest-green dark:text-sage-green underline cursor-pointer
            hover:text-forest-green/70 dark:hover:text-sage-green/70;
@@ -243,12 +307,16 @@
 
   /* 3-button importance toggle (used in inline expanded forms) */
   .importance-toggle { @apply flex gap-2 mt-1; }
+  .importance-toggle.compact { @apply gap-1.5; }
   .importance-btn {
     @apply flex-1 py-2.5 rounded-xl text-sm font-medium border-2
            border-stone-200 dark:border-forest-green/30
            bg-transparent text-stone-600 dark:text-stone-400
            transition-all duration-150 cursor-pointer;
     font: inherit;
+  }
+  .importance-toggle.compact .importance-btn {
+    @apply rounded-md py-1.5 text-sm;
   }
   .importance-btn.selected[data-value="High"]   {
     @apply border-ember-red bg-ember-red/10 text-ember-red;
@@ -260,11 +328,10 @@
     @apply border-sage-green bg-sage-green/10 text-sage-green;
   }
 
-  /* ─── Config Section ────────────────────────────────────────────── */
+  /* ─── Settings Section ──────────────────────────────────────────── */
 
   .config-section-header {
-    @apply text-base font-semibold text-forest-green dark:text-sage-green mb-3 mt-8;
-    font-family: 'Playfair Display', serif;
+    @apply text-sm uppercase tracking-wide font-bold text-stone-500 dark:text-stone-400 mb-3 mt-8;
   }
   .config-card {
     @apply rounded-xl bg-off-white dark:bg-forest-green/10
@@ -283,8 +350,8 @@
   /* ─── Legacy layout (template editor still uses these) ─────────── */
 
   .panel {
-    @apply rounded-2xl border border-stone-200 dark:border-forest-green/30
-           bg-off-white dark:bg-forest-green/10 p-5 mx-4 my-4;
+    @apply rounded-xl border border-stone-200 dark:border-forest-green/30
+           bg-off-white dark:bg-forest-green/10 p-4 mx-4 my-4;
   }
   .panel-header  { @apply flex items-center gap-3 mb-5 flex-wrap; }
   .section-header { @apply flex items-center justify-between gap-2; }
@@ -305,6 +372,101 @@
   .inline-fields { @apply grid grid-cols-2 gap-3; }
   .empty-state   { @apply mt-4 text-sm text-stone-500 dark:text-stone-400; }
 
+  /* ─── App Layout ───────────────────────────────────────────────── */
+
+  .app-page {
+    @apply px-4 pt-4 pb-6;
+  }
+  .page-header {
+    @apply mb-4 flex items-center justify-between gap-3;
+  }
+  .page-title {
+    @apply text-xl font-bold leading-tight text-stone-900 dark:text-stone-100;
+  }
+  .page-subtitle {
+    @apply mt-0.5 text-sm text-stone-500 dark:text-stone-400;
+  }
+  .surface {
+    @apply rounded-xl border border-stone-200 bg-off-white p-4
+           dark:border-forest-green/20 dark:bg-forest-green/10;
+  }
+  .detail-toolbar {
+    @apply sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-2 border-b border-stone-200
+           bg-aged-paper/95 px-4 py-3 backdrop-blur dark:border-forest-green/20 dark:bg-dark-moss/95;
+  }
+  .progress-summary {
+    @apply mb-4 rounded-xl border border-stone-200 bg-off-white p-4 dark:border-forest-green/20 dark:bg-forest-green/10;
+  }
+  .progress-summary-header {
+    @apply mb-1.5 flex items-center justify-between gap-3 text-sm text-stone-500 dark:text-stone-400;
+  }
+  .progress-actions {
+    @apply flex flex-shrink-0 items-center gap-3;
+  }
+  .inline-action {
+    @apply rounded-md px-2 py-1 text-xs font-bold text-forest-green hover:bg-forest-green/10
+           dark:text-sage-green dark:hover:bg-forest-green/20;
+    background: transparent;
+  }
+  .weight-summary {
+    @apply mt-3 flex items-center justify-between gap-3 border-t border-stone-200 pt-3
+           text-sm text-stone-500 dark:border-forest-green/20 dark:text-stone-400;
+  }
+  .weight-summary strong {
+    @apply whitespace-nowrap font-bold text-stone-800 dark:text-stone-100;
+  }
+  .trip-details-editor {
+    @apply mb-4 rounded-xl border border-stone-200 bg-off-white p-3 dark:border-forest-green/20 dark:bg-forest-green/10;
+  }
+  .trip-details-editor summary {
+    @apply flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-stone-800 dark:text-stone-100;
+  }
+  .trip-details-editor summary::-webkit-details-marker { display: none; }
+  .trip-details-editor summary::marker { display: none; }
+  .trip-details-editor summary small {
+    @apply mt-0.5 block text-xs font-medium text-stone-500 dark:text-stone-400;
+  }
+  .trip-details-editor[open] summary {
+    @apply mb-3 border-b border-stone-200 pb-3 dark:border-forest-green/20;
+  }
+  .item-edit-actions {
+    @apply mt-3 flex items-center justify-between gap-2;
+  }
+  .primary-action-row {
+    @apply mb-4 flex;
+  }
+  .primary-action-row .btn-primary {
+    @apply w-full;
+  }
+  .action-menu {
+    @apply relative;
+  }
+  .action-menu summary {
+    @apply flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg
+           bg-stone-200 text-stone-700 transition-colors hover:bg-stone-300
+           dark:bg-forest-green/20 dark:text-stone-200 dark:hover:bg-forest-green/30;
+  }
+  .action-menu summary::-webkit-details-marker { display: none; }
+  .action-menu summary::marker { display: none; }
+  .action-menu summary svg {
+    @apply h-5 w-5;
+  }
+  .action-menu-panel {
+    @apply absolute right-0 top-12 z-30 grid w-44 gap-1 rounded-xl border border-stone-200 bg-off-white p-1.5
+           shadow-lg dark:border-forest-green/25 dark:bg-dark-moss;
+  }
+  .menu-action {
+    @apply rounded-lg px-3 py-2 text-left text-sm font-semibold text-stone-700 hover:bg-stone-100
+           dark:text-stone-200 dark:hover:bg-forest-green/20;
+    background: transparent;
+  }
+  .menu-action.danger {
+    @apply text-ember-red hover:bg-ember-red/10;
+  }
+  .menu-action.danger-armed {
+    @apply bg-camp-amber/15 text-camp-amber hover:bg-camp-amber/20;
+  }
+
   /* ─── Tooltips ─────────────────────────────────────────────────── */
 
   [data-tooltip] { @apply relative; }
@@ -320,9 +482,12 @@
 }
 
 @layer utilities {
-  .font-display { font-family: 'Playfair Display', serif; }
+  .font-display { font-family: Nunito, system-ui, sans-serif; }
 
   @media (max-width: 480px) {
     .inline-fields { grid-template-columns: 1fr; }
+    .item-edit-grid, .trip-details-grid { grid-template-columns: 1fr; }
+    .item-expand { margin-left: 0; margin-right: 0; }
+    .span-2 { grid-column: span 1 / span 1; }
   }
 }

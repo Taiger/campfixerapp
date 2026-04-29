@@ -4,7 +4,7 @@
 // Domain model
 // ─────────────
 // Plan    — a reusable camping checklist with a default set of items.
-//           Managed in the Config tab via the plan editor.
+//           Managed in Settings via the plan editor.
 // Trip    — a specific outing created from a Plan; items can diverge
 //           from the Plan over time. Listed on the Trips tab.
 // TripItem — one line-item on a Trip (checkbox, importance, size, weight).
@@ -30,6 +30,7 @@ import { generateId, SIZE_OPTIONS } from './templates.js';
 
 const state = {
   view: 'trips',
+  backView: null,         // Most recent distinct view; used by Back buttons.
   plans: [],              // Plan[] — reusable checklists
   trips: [],              // Trip[] — specific outings
   activePlan: null,       // Plan being edited in the plan editor
@@ -38,6 +39,7 @@ const state = {
   editingTrip: null,      // working copy of activeTrip (with _fields arrays)
   expandedTripItemIndex: null,  // index of the inline-expanded TripItem, or null
   expandedPlanItemIndex: null,  // index of the inline-expanded PlanItem, or null
+  tripDetailsOpen: false,
 };
 
 const elements = {
@@ -46,7 +48,29 @@ const elements = {
 
 // ─── Core helpers ─────────────────────────────────────────────────────────────
 
-function rerender() { renderView(state.view); }
+function rerender() { renderView(state.view, { track: false }); }
+
+async function persistCurrentView() {
+  if (state.view === 'trip-detail' && state.editingTrip) {
+    await persistEditingTripDraft();
+  }
+}
+
+async function navigateTo(view) {
+  await persistCurrentView();
+  renderView(view);
+}
+
+async function goToTrips() {
+  await navigateTo('trips');
+}
+
+async function goBack(fallback = 'trips') {
+  await persistCurrentView();
+  const target = state.backView && state.backView !== state.view ? state.backView : fallback;
+  state.backView = null;
+  renderView(target, { track: false });
+}
 
 function setActiveNav(view) {
   const navKey = {
@@ -64,12 +88,16 @@ function armDeleteButton(button, onConfirm) {
   const orig = button.textContent;
   button.dataset.armed = 'true';
   button.textContent = 'Tap again to confirm';
-  button.classList.replace('btn-danger', 'btn-danger-armed');
+  if (!button.classList.replace('btn-danger', 'btn-danger-armed')) {
+    button.classList.add('danger-armed');
+  }
   setTimeout(() => {
     if (button.dataset.armed === 'true') {
       button.dataset.armed = 'false';
       button.textContent = orig;
-      button.classList.replace('btn-danger-armed', 'btn-danger');
+      if (!button.classList.replace('btn-danger-armed', 'btn-danger')) {
+        button.classList.remove('danger-armed');
+      }
     }
   }, 3000);
 }
@@ -79,7 +107,7 @@ async function downloadDB() {
   const blob = new Blob([bytes], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'campfixer.db'; a.click();
+  a.href = url; a.download = 'campfixer-v2.db'; a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -129,14 +157,42 @@ function packedProgress(trip) {
   return { packed, total, pct: total ? Math.round((packed / total) * 100) : 0 };
 }
 
+function tripWeightSummary(trip) {
+  const weights = trip.items
+    .map(item => Number.parseFloat(item.weight))
+    .filter(weight => Number.isFinite(weight) && weight > 0);
+  const packedWeights = trip.items
+    .filter(item => item.packed)
+    .map(item => Number.parseFloat(item.weight))
+    .filter(weight => Number.isFinite(weight) && weight > 0);
+  const sum = values => values.reduce((total, weight) => total + weight, 0);
+  return {
+    total: sum(weights),
+    packed: sum(packedWeights),
+    hasWeight: weights.length > 0,
+  };
+}
+
+function formatWeight(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function importanceBadge(importance) {
   const map = {
-    High:   ['badge-high',   '🔴'],
-    Medium: ['badge-medium', '🟡'],
-    Low:    ['badge-low',    '🟢'],
+    High:   'badge-high',
+    Medium: 'badge-medium',
+    Low:    'badge-low',
   };
-  const [cls, dot] = map[importance] || map.Medium;
-  return html`<span class="badge ${cls}">${dot} ${importance}</span>`;
+  const cls = map[importance] || map.Medium;
+  return html`<span class="badge ${cls}"><span class="badge-dot"></span>${importance}</span>`;
+}
+
+function sectionLabel(label, count, cls = '') {
+  return html`
+    <span class="section-label ${cls}">
+      <span>${label}</span>
+      <span class="section-count">${count}</span>
+    </span>`;
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -144,16 +200,17 @@ function importanceBadge(importance) {
 function stumpySVG(cls = 'w-24 h-24') {
   return html`
     <svg class="${cls} text-stone-300 dark:text-forest-green/40" viewBox="0 0 100 100"
-         fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="50" cy="45" r="22"/>
-      <circle cx="35" cy="27" r="8"/>
-      <circle cx="65" cy="27" r="8"/>
-      <circle cx="43" cy="42" r="2.5" fill="currentColor" stroke="none"/>
-      <circle cx="57" cy="42" r="2.5" fill="currentColor" stroke="none"/>
-      <ellipse cx="50" cy="50" rx="5" ry="3.5" fill="currentColor" stroke="none"/>
-      <rect x="30" y="64" width="40" height="28" rx="12"/>
-      <path d="M30 74 Q18 70 20 82"/>
-      <path d="M70 74 Q82 70 80 82"/>
+         role="img" aria-label="Camping checklist icon"
+         fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 78h64"/>
+      <path d="M28 78 50 26l22 52"/>
+      <path d="M50 26v52"/>
+      <path d="M38 78 50 52l12 26"/>
+      <path d="M24 70c-4-6-4-13 0-19"/>
+      <path d="M76 70c4-6 4-13 0-19"/>
+      <path d="M35 18h30"/>
+      <path d="M40 12h20"/>
+      <path d="M32 86h36"/>
     </svg>`;
 }
 
@@ -188,6 +245,7 @@ function enterTripDetail(trip) {
   clone.items = clone.items.map(withFields);
   state.editingTrip = clone;
   state.expandedTripItemIndex = null;
+  state.tripDetailsOpen = false;
   renderView('trip-detail');
 }
 
@@ -197,18 +255,33 @@ export async function initApp() {
   state.plans = await loadPlans();   // Plans: reusable checklists
   state.trips = await loadTrips();   // Trips: specific outings
 
+  const logo = document.getElementById('logo-home');
+  if (logo) {
+    logo.addEventListener('click', async event => {
+      event.preventDefault();
+      await goToTrips();
+    });
+  }
+
   document.querySelectorAll('.bottom-nav-btn').forEach(btn =>
-    btn.addEventListener('click', () => renderView(btn.dataset.view)));
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.view === 'trips') {
+        await goToTrips();
+      } else {
+        await navigateTo(btn.dataset.view);
+      }
+    }));
 
   const fab = document.getElementById('fab-new-trip');
-  if (fab) fab.addEventListener('click', () => renderView('trip-creator'));
+  if (fab) fab.addEventListener('click', () => navigateTo('trip-creator'));
 
-  renderView('trips');
+  renderView('trips', { track: false });
 }
 
 // ─── View dispatch ────────────────────────────────────────────────────────────
 
-function renderView(view) {
+function renderView(view, { track = true } = {}) {
+  if (track && view !== state.view) state.backView = state.view;
   state.view = view;
   setActiveNav(view);
   const views = {
@@ -230,13 +303,19 @@ function renderView(view) {
 
 function tripsListTemplate() {
   const fab = document.getElementById('fab-new-trip');
-  if (fab) fab.classList.remove('hidden');
+  if (fab) fab.classList.add('hidden');
 
   if (state.trips.length === 0) {
     return html`
-      <section class="px-4 pt-6">
-        <h2 class="font-display text-2xl font-bold text-forest-green dark:text-sage-green mb-1">My Trips</h2>
-        <div class="empty-state-new mt-8">
+      <section class="app-page">
+        <div class="page-header">
+          <div>
+            <h2 class="page-title">Trips</h2>
+            <p class="page-subtitle">Packing lists for each outing.</p>
+          </div>
+          <button @click=${() => navigateTo('trip-creator')} class="btn-primary">New Trip</button>
+        </div>
+        <div class="empty-state-new">
           ${stumpySVG()}
           <p>Nothing packed yet! Start a new trip and I'll keep track.</p>
         </div>
@@ -244,9 +323,15 @@ function tripsListTemplate() {
   }
 
   return html`
-    <section class="px-4 pt-6">
-      <h2 class="font-display text-2xl font-bold text-forest-green dark:text-sage-green mb-4">My Trips</h2>
-      <div class="grid gap-4">
+    <section class="app-page">
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">Trips</h2>
+          <p class="page-subtitle">${state.trips.length} active ${state.trips.length === 1 ? 'trip' : 'trips'}</p>
+        </div>
+        <button @click=${() => navigateTo('trip-creator')} class="btn-primary">New Trip</button>
+      </div>
+      <div class="grid gap-3">
         ${state.trips.map(trip => tripCardTemplate(trip))}
       </div>
     </section>`;
@@ -260,8 +345,13 @@ function tripCardTemplate(trip) {
   return html`
     <div class="trip-card" @click=${() => enterTripDetail(trip)} role="button" tabindex="0">
       <div class="trip-card-header">
-        <div class="w-10 h-10 rounded-full bg-forest-green/10 dark:bg-forest-green/20
-                    flex items-center justify-center text-xl flex-shrink-0">🏕️</div>
+        <div class="trip-card-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19h16L12 5 4 19z"/>
+            <path d="M12 5v14"/>
+            <path d="M8.5 19 12 12.5 15.5 19"/>
+          </svg>
+        </div>
         <div class="flex-1 min-w-0">
           <p class="trip-card-title truncate">${trip.name}</p>
           <p class="text-xs text-stone-400 dark:text-stone-500 mt-0.5 truncate">
@@ -289,26 +379,34 @@ function tripCardTemplate(trip) {
 
 // ─── Trip detail ──────────────────────────────────────────────────────────────
 
-// Condensed TripItem row: [checkbox] [name] [badge] [pencil]. Pencil toggles inline expansion.
+// Condensed TripItem row: checkbox packs; label/edit button opens inline editing.
 function tripItemRow(item, index) {
   const isExpanded = state.expandedTripItemIndex === index;
 
   return html`
     <div class="item-row-wrap">
-      <div class="check-row" @click=${() => togglePackedTripItem(index)}>
-        <div class="check-box ${item.packed ? 'checked' : ''}">
+      <div class="check-row">
+        <button class="check-box ${item.packed ? 'checked' : ''}"
+                type="button"
+                aria-label="${item.packed ? 'Mark unpacked' : 'Mark packed'}: ${item.name}"
+                @click=${() => togglePackedTripItem(index)}>
           ${item.packed ? html`
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                  stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 13l4 4L19 7"/>
             </svg>` : ''}
-        </div>
-        <span class="check-row-label ${item.packed ? 'packed' : ''} flex-1 min-w-0 truncate">${item.name}</span>
-        ${importanceBadge(item.importance)}
+        </button>
+        <button class="check-row-label ${item.packed ? 'packed' : ''} flex-1 min-w-0 truncate"
+                type="button"
+                @click=${() => toggleExpandedTripItem(index)}>
+          ${item.name}
+        </button>
         <button class="flex-shrink-0 w-9 h-9 flex items-center justify-center
                        text-stone-400 hover:text-stone-600 dark:hover:text-stone-300
                        rounded-lg transition-colors"
-                @click=${e => { e.stopPropagation(); toggleExpandedTripItem(index); }}>
+                type="button"
+                aria-label="Edit ${item.name}"
+                @click=${() => toggleExpandedTripItem(index)}>
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5"/>
@@ -324,55 +422,77 @@ function tripItemRow(item, index) {
 function tripItemExpandedTemplate(item, index) {
   const unit = getWeightUnit();
   return html`
-    <div class="item-expand">
-      <div class="grid gap-3">
-        <label class="form-label">Name
+    <div class="item-expand item-edit-card">
+      <div class="item-edit-header">
+        <span>Edit item</span>
+        <button type="button"
+                class="item-edit-close"
+                aria-label="Close item editor"
+                @click=${() => closeExpandedTripItem()}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/>
+            <path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="item-edit-grid">
+        <label class="compact-field span-2">Name
           <input type="text" .value=${item.name}
-                 @input=${e => { state.editingTrip.items[index].name = e.target.value; rerender(); }} />
+                 @input=${e => { state.editingTrip.items[index].name = e.target.value; }}
+                 @blur=${persistEditingTripDraft} />
         </label>
 
-        <div>
-          <p class="form-label mb-1">Importance</p>
-          <div class="importance-toggle">
+        <div class="span-2">
+          <p class="compact-label">Importance</p>
+          <div class="importance-toggle compact">
             ${['High', 'Medium', 'Low'].map(level => html`
               <button class="importance-btn ${item.importance === level ? 'selected' : ''}"
                       data-value="${level}"
-                      @click=${() => {
+                      @click=${async () => {
                         state.editingTrip.items[index].importance = level;
                         rerender();
+                        await persistEditingTripDraft();
                       }}>
                 ${level}
               </button>`)}
           </div>
         </div>
 
-        <div class="inline-fields">
-          <label class="form-label">Size
-            <select .value=${item.size || ''}
-                    @change=${e => { state.editingTrip.items[index].size = e.target.value; }}>
-              <option value="">— pick size —</option>
+        <label class="compact-field">Size
+          <select .value=${item.size || ''}
+                  @change=${async e => {
+                    state.editingTrip.items[index].size = e.target.value;
+                    await persistEditingTripDraft();
+                  }}>
+              <option value="">Pick size</option>
               ${SIZE_OPTIONS.map(s => html`
                 <option value=${s.value} ?selected=${item.size === s.value}>${s.label}</option>`)}
-            </select>
-          </label>
-          <label class="form-label">Weight (${unit})
-            <input type="number" min="0" step="0.1" .value=${item.weight || ''}
-                   @input=${e => { state.editingTrip.items[index].weight = e.target.value; }} />
-          </label>
-        </div>
+          </select>
+        </label>
+        <label class="compact-field">Weight (${unit})
+          <input type="number" min="0" step="0.1" .value=${item.weight || ''}
+                 @input=${e => { state.editingTrip.items[index].weight = e.target.value; }}
+                 @blur=${persistEditingTripDraft} />
+        </label>
 
-        <label class="form-label">Notes
+        <label class="compact-field span-2">Notes
           <textarea rows="2" .value=${item.description || ''}
-                    @input=${e => { state.editingTrip.items[index].description = e.target.value; }}></textarea>
+                    @input=${e => { state.editingTrip.items[index].description = e.target.value; }}
+                    @blur=${persistEditingTripDraft}></textarea>
         </label>
       </div>
 
-      <div class="flex gap-2 mt-3">
-        <button @click=${() => { state.expandedTripItemIndex = null; rerender(); }}
-                class="btn-secondary text-sm">Done</button>
+      <div class="item-edit-actions">
         <button @click=${() => removeTripItem(index)} class="btn-danger text-sm ml-auto">Remove</button>
       </div>
     </div>`;
+}
+
+async function closeExpandedTripItem() {
+  state.expandedTripItemIndex = null;
+  rerender();
+  await persistEditingTripDraft();
 }
 
 function toggleExpandedTripItem(index) {
@@ -380,20 +500,40 @@ function toggleExpandedTripItem(index) {
   rerender();
 }
 
-function togglePackedTripItem(index) {
+async function persistEditingTripDraft() {
+  if (!state.editingTrip) return;
+  const draft = {
+    ...state.editingTrip,
+    items: state.editingTrip.items.map(finalizeItem),
+  };
+  state.trips = await updateTrip(draft);
+  state.activeTrip = state.trips.find(t => t.id === draft.id) || draft;
+}
+
+async function togglePackedTripItem(index) {
   if (!state.editingTrip) return;
   state.editingTrip.items[index].packed = !state.editingTrip.items[index].packed;
   rerender();
+  await persistEditingTripDraft();
 }
 
-function removeTripItem(index) {
+async function unpackAllTripItems() {
+  if (!state.editingTrip) return;
+  state.editingTrip.items = state.editingTrip.items.map(item => ({ ...item, packed: false }));
+  state.expandedTripItemIndex = null;
+  rerender();
+  await persistEditingTripDraft();
+}
+
+async function removeTripItem(index) {
   if (!state.editingTrip) return;
   state.editingTrip.items.splice(index, 1);
   if (state.expandedTripItemIndex === index) state.expandedTripItemIndex = null;
   rerender();
+  await persistEditingTripDraft();
 }
 
-function addNewTripItem() {
+async function addNewTripItem() {
   if (!state.editingTrip) return;
   const newItem = withFields({
     tripItemId: generateId('trip'),
@@ -411,6 +551,7 @@ function addNewTripItem() {
   const index = state.editingTrip.items.length - 1;
   state.expandedTripItemIndex = index;
   rerender();
+  await persistEditingTripDraft();
 }
 
 async function syncTripNow() {
@@ -441,22 +582,53 @@ async function pushTripNow() {
   enterTripDetail(state.trips.find(t => t.id === result.trip.id) || result.trip);
 }
 
-async function saveEditingTrip(silent = false) {
-  const trip = state.editingTrip;
-  if (!trip) return;
-  trip.items = trip.items.map(finalizeItem);
-  state.trips = await updateTrip(trip);
-  const saved = state.trips.find(t => t.id === trip.id) || trip;
-  state.activeTrip = saved;
-  enterTripDetail(saved);
-  if (!silent) alert('Trip saved.');
-}
-
 async function deleteTripNow() {
   if (!state.editingTrip) return;
   state.trips = await deleteTrip(state.editingTrip.id);
   state.editingTrip = null;
   renderView('trips');
+}
+
+function tripDetailsEditorTemplate(trip) {
+  return html`
+    <details class="trip-details-editor" ?open=${state.tripDetailsOpen}
+             @toggle=${event => { state.tripDetailsOpen = event.currentTarget.open; }}>
+      <summary>
+        <span>
+          <strong>Trip details</strong>
+          <small>${trip.startDate || trip.locationUrl || trip.description ? 'Dates, location, notes' : 'Add dates, location, and notes'}</small>
+        </span>
+        <span class="text-stone-400 text-sm font-normal">▾</span>
+      </summary>
+      <div class="trip-details-grid">
+        <label class="compact-field span-2">Trip name
+          <input type="text" .value=${trip.name || ''}
+                 @input=${event => { trip.name = event.target.value; }}
+                 @change=${persistEditingTripDraft} />
+        </label>
+        <label class="compact-field">Start date
+          <input type="date" .value=${trip.startDate || ''}
+                 @input=${event => { trip.startDate = event.target.value; }}
+                 @change=${persistEditingTripDraft} />
+        </label>
+        <label class="compact-field">End date
+          <input type="date" .value=${trip.endDate || ''}
+                 @input=${event => { trip.endDate = event.target.value; }}
+                 @change=${persistEditingTripDraft} />
+        </label>
+        <label class="compact-field span-2">Location link
+          <input type="url" inputmode="url" placeholder="https://maps.example/..."
+                 .value=${trip.locationUrl || ''}
+                 @input=${event => { trip.locationUrl = event.target.value; }}
+                 @change=${persistEditingTripDraft} />
+        </label>
+        <label class="compact-field span-2">Description
+          <textarea rows="2" .value=${trip.description || ''}
+                    @input=${event => { trip.description = event.target.value; }}
+                    @change=${persistEditingTripDraft}></textarea>
+        </label>
+      </div>
+    </details>`;
 }
 
 function tripDetailTemplate() {
@@ -465,6 +637,8 @@ function tripDetailTemplate() {
   const srcPlan = state.plans.find(p => p.id === trip.planId);
   const badge = syncBadgeCount(trip);
   const { packed, total, pct } = packedProgress(trip);
+  const weight = tripWeightSummary(trip);
+  const unit = getWeightUnit();
 
   const highItems   = trip.items.filter(i => !i.packed && i.importance === 'High');
   const medItems    = trip.items.filter(i => !i.packed && i.importance === 'Medium');
@@ -475,44 +649,68 @@ function tripDetailTemplate() {
   if (fab) fab.classList.add('hidden');
 
   return html`
-    <section class="px-4 pt-4 pb-6">
+    <section class="app-page trip-detail-page">
 
       <!-- Back + title -->
-      <div class="flex items-center gap-3 mb-4 flex-wrap">
-        <button @click=${() => { saveEditingTrip(true); }} class="btn-secondary">← Back</button>
-        <h2 class="font-display text-xl font-bold text-forest-green dark:text-sage-green flex-1 min-w-0 truncate">
-          ${trip.name}
-        </h2>
+      <div class="detail-toolbar">
+        <button @click=${() => goBack('trips')} class="btn-secondary">← Back</button>
+        <div class="min-w-0 flex-1">
+          <h2 class="page-title truncate">${trip.name}</h2>
+          <p class="page-subtitle truncate">${srcPlan ? srcPlan.name : 'Custom trip'}</p>
+        </div>
         ${badge > 0 ? html`
           <button @click=${syncTripNow} class="btn-sync">
             Sync
             <span class="ml-1 bg-white/30 rounded-full px-1.5 py-0.5 text-xs">${badge}</span>
           </button>` : ''}
+        <details class="action-menu">
+          <summary aria-label="More trip actions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="19" cy="12" r="1"/>
+              <circle cx="5" cy="12" r="1"/>
+            </svg>
+          </summary>
+          <div class="action-menu-panel">
+            ${srcPlan ? html`
+              <button @click=${pushTripNow} class="menu-action">Push to plan</button>` : ''}
+            <button @click=${e => armDeleteButton(e.currentTarget, deleteTripNow)} class="menu-action danger">
+              Delete trip
+            </button>
+          </div>
+        </details>
       </div>
 
+      ${tripDetailsEditorTemplate(trip)}
+
       <!-- Progress summary -->
-      <div class="mb-5">
-        <div class="flex justify-between text-sm text-stone-500 dark:text-stone-400 mb-1.5">
-          <span>${packed} of ${total} packed</span><span>${pct}%</span>
+      <div class="progress-summary">
+        <div class="progress-summary-header">
+          <span>${packed} of ${total} packed</span>
+          <div class="progress-actions">
+            ${packed > 0 ? html`
+              <button @click=${unpackAllTripItems} class="inline-action">Unpack everything</button>` : ''}
+            <span>${pct}%</span>
+          </div>
         </div>
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+        ${weight.hasWeight ? html`
+          <div class="weight-summary">
+            <span>Total weight</span>
+            <strong>${formatWeight(weight.packed)} / ${formatWeight(weight.total)} ${unit}</strong>
+          </div>` : ''}
       </div>
 
       <!-- Action row -->
-      <div class="flex gap-2 mb-5 flex-wrap">
-        <button @click=${addNewTripItem} class="btn-secondary">+ Add item</button>
-        ${srcPlan ? html`
-          <button @click=${pushTripNow} class="btn-push">Push to plan</button>` : ''}
-        <button @click=${() => saveEditingTrip(false)} class="btn-primary">Save</button>
-        <button @click=${e => armDeleteButton(e.currentTarget, deleteTripNow)} class="btn-danger">
-          Delete trip
-        </button>
+      <div class="primary-action-row">
+        <button @click=${addNewTripItem} class="btn-primary">Add item</button>
       </div>
 
       <!-- High importance — always rendered, hidden when empty -->
       <details class="section-group ${highItems.length === 0 ? 'hidden' : ''}" open>
         <summary>
-          <span>🔴 High <span class="badge badge-high ml-2">${highItems.length}</span></span>
+          ${sectionLabel('High', highItems.length, 'priority-high')}
           <span class="text-stone-400 text-sm font-normal">▾</span>
         </summary>
         <div>
@@ -523,7 +721,7 @@ function tripDetailTemplate() {
       <!-- Medium importance -->
       <details class="section-group ${medItems.length === 0 ? 'hidden' : ''}" open>
         <summary>
-          <span>🟡 Medium <span class="badge badge-medium ml-2">${medItems.length}</span></span>
+          ${sectionLabel('Medium', medItems.length, 'priority-medium')}
           <span class="text-stone-400 text-sm font-normal">▾</span>
         </summary>
         <div>
@@ -534,7 +732,7 @@ function tripDetailTemplate() {
       <!-- Low importance -->
       <details class="section-group ${lowItems.length === 0 ? 'hidden' : ''}">
         <summary>
-          <span>🟢 Low <span class="badge badge-low ml-2">${lowItems.length}</span></span>
+          ${sectionLabel('Low', lowItems.length, 'priority-low')}
           <span class="text-stone-400 text-sm font-normal">▾</span>
         </summary>
         <div>
@@ -545,9 +743,7 @@ function tripDetailTemplate() {
       <!-- Packed items -->
       <details class="section-group ${packedItems.length === 0 ? 'hidden' : ''}">
         <summary>
-          <span class="text-stone-400 dark:text-stone-500">
-            ✓ Packed <span class="ml-2 text-xs font-normal">${packedItems.length}</span>
-          </span>
+          ${sectionLabel('Packed', packedItems.length, 'priority-packed')}
           <span class="text-stone-400 text-sm font-normal">▾</span>
         </summary>
         <div class="opacity-60">
@@ -567,33 +763,29 @@ function tripCreatorTemplate() {
   // No plans to start from — prompt user to create one first.
   if (state.plans.length === 0) {
     return html`
-      <div class="panel">
-        <div class="panel-header">
-          <button @click=${() => renderView('trips')} class="btn-secondary">← Back</button>
-          <h2 class="font-display text-xl font-bold text-forest-green dark:text-sage-green">
-            New Trip
-          </h2>
+      <section class="app-page">
+        <div class="page-header">
+          <button @click=${() => goBack('trips')} class="btn-secondary">← Back</button>
+          <h2 class="page-title">New Trip</h2>
         </div>
-        <div class="empty-state-new mt-8">
+        <div class="empty-state-new">
           ${gearSVG('w-16 h-16')}
           <p>
             No plans yet.
-            <button @click=${() => renderView('config')} class="inline-link">Add a plan in Config</button>
+            <button @click=${() => navigateTo('config')} class="inline-link">Add a plan in Settings</button>
             to get started.
           </p>
         </div>
-      </div>`;
+      </section>`;
   }
 
   return html`
-    <div class="panel">
-      <div class="panel-header">
-        <button @click=${() => renderView('trips')} class="btn-secondary">← Back</button>
-        <h2 class="font-display text-xl font-bold text-forest-green dark:text-sage-green">
-          New Trip
-        </h2>
+    <section class="app-page">
+      <div class="page-header">
+        <button @click=${() => goBack('trips')} class="btn-secondary">← Back</button>
+        <h2 class="page-title">New Trip</h2>
       </div>
-      <form class="form-grid" id="create-trip-form" @submit=${e => e.preventDefault()}>
+      <form class="surface form-grid" id="create-trip-form" @submit=${e => e.preventDefault()}>
         <label>Trip name
           <input name="tripName" type="text" placeholder="My weekend trip" required />
         </label>
@@ -614,12 +806,13 @@ function tripCreatorTemplate() {
           const trip = await createTripFromPlan(plan, tripName);
           state.trips = await addTrip(trip);
           enterTripDetail(trip);
-        }} class="btn-primary">Create trip</button>
+          state.backView = 'trips';
+        }} class="btn-primary w-full sm:w-auto">Create trip</button>
       </div>
-    </div>`;
+    </section>`;
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── Settings ─────────────────────────────────────────────────────────────────
 
 function configTemplate() {
   const fab = document.getElementById('fab-new-trip');
@@ -629,17 +822,12 @@ function configTemplate() {
   const unit = getWeightUnit();
 
   return html`
-    <section class="px-4 pt-6 pb-6">
+    <section class="app-page">
 
-      <!-- Stumpy header -->
-      <div class="flex items-center gap-4 mb-6">
-        <div class="flex-shrink-0 w-14 h-14 rounded-full bg-forest-green/10 dark:bg-forest-green/20
-                    flex items-center justify-center overflow-hidden">
-          ${stumpySVG('w-12 h-12')}
-        </div>
+      <div class="page-header">
         <div>
-          <h2 class="font-display text-2xl font-bold text-forest-green dark:text-sage-green">Config</h2>
-          <p class="text-sm text-stone-400 dark:text-stone-500">Settings &amp; Admin</p>
+          <h2 class="page-title">Settings</h2>
+          <p class="page-subtitle">Plans, preferences, and backup.</p>
         </div>
       </div>
 
@@ -669,7 +857,7 @@ function configTemplate() {
                 }} class="btn-secondary text-xs px-3 py-1.5 flex-shrink-0">Dup</button>
               </div>`)}
       </div>
-      <button @click=${() => enterPlanEditor(null)} class="btn-primary mt-4">+ New plan</button>
+      <button @click=${() => enterPlanEditor(null)} class="btn-primary mt-4">New plan</button>
 
       <!-- Appearance -->
       <p class="config-section-header">Appearance</p>
@@ -800,7 +988,7 @@ function planItemRow(item, index) {
           </div>
           <div class="flex gap-2 mt-3">
             <button @click=${() => { state.expandedPlanItemIndex = null; rerender(); }}
-                    class="btn-secondary text-sm">Done</button>
+                    class="btn-secondary text-sm">Close</button>
             <button @click=${() => { p.defaultItems.splice(index, 1); state.expandedPlanItemIndex = null; rerender(); }}
                     class="btn-danger text-sm ml-auto">Remove</button>
           </div>
@@ -814,8 +1002,8 @@ function planEditorTemplate() {
   return html`
     <section class="panel">
       <div class="panel-header">
-        <button @click=${() => renderView('config')} class="btn-secondary">← Back</button>
-        <h2 class="font-display text-xl font-bold text-forest-green dark:text-sage-green">
+        <button @click=${() => goBack('config')} class="btn-secondary">← Back</button>
+        <h2 class="page-title">
           ${p.name ? `Edit: ${p.name}` : 'New plan'}
         </h2>
       </div>

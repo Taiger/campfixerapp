@@ -5,10 +5,9 @@
 // ───────────────────────────────────────────
 //   1. Apply theme immediately (already done by inline <head> script to avoid flash)
 //   2. showLoadingState  — placeholder while the SQLite worker starts
-//   3. initDB            — starts the Web Worker, opens campfixer.db in OPFS
-//   4. migrateFromLocalStorage — one-time copy of any pre-migration data, then clears it
-//   5. initApp           — loads templates + plans from SQLite, renders trips view
-//   6. Register service worker — non-blocking; failure is non-fatal
+//   3. initDB            — starts the Web Worker, opens campfixer-v2.db in OPFS
+//   4. initApp           — loads plans + trips from SQLite, renders trips view
+//   5. Register service worker — non-blocking; failure is non-fatal
 //
 // Theme storage exception
 // ───────────────────────
@@ -19,7 +18,6 @@
 // worker-based — it cannot be read that early in the page lifecycle.
 
 import { initDB } from './db.js';
-import { migrateFromLocalStorage } from './storage.js';
 import { initApp, applyThemeToggle } from './app.js';
 
 // Updates the sun/moon icon to match the active theme.
@@ -53,13 +51,13 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Header theme toggle — delegates to the shared applyThemeToggle from app.js
   // so the config view icon stays in sync when toggled from the header.
-  document.getElementById('theme-toggle').addEventListener('click', applyThemeToggle);
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) themeToggle.addEventListener('click', applyThemeToggle);
 
   showLoadingState();
 
   try {
     await initDB();
-    await migrateFromLocalStorage();
     // Clear the loading placeholder so lit-html renders into an empty container.
     document.getElementById('app-main').innerHTML = '';
     await initApp();

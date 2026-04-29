@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Campfixer</title>
-  <!-- Caveat for logo wordmark; Playfair Display for headings; Nunito for body -->
+  <!-- Caveat for logo wordmark; Nunito for body and workflow UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Playfair+Display:wght@400;700&family=Nunito:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#F5F0E8" id="meta-theme-color" />
@@ -17,7 +17,7 @@
     headers on the next page load.  SharedArrayBuffer (required by sqlite-wasm)
     is gated on those headers, which GitHub Pages cannot serve natively.
   -->
-  <script src="coi-serviceworker.js"></script>
+  <script src="coi-serviceworker.js" defer></script>
 
   <!--
     Apply the saved theme BEFORE the page renders to prevent a flash of the
@@ -39,7 +39,7 @@
   <div class="max-w-2xl mx-auto">
 
     <header class="flex items-center justify-between gap-4 px-4 pt-4 pb-3">
-      <h1 class="logo-brand">Camp<span class="logo-accent">Fixer</span></h1>
+      <a href="#" id="logo-home" class="logo-brand" aria-label="Go to Trips">Camp<span class="logo-accent">Fixer</span></a>
       <button id="theme-toggle" class="btn-icon" aria-label="Toggle light/dark mode" title="Toggle theme">
         <span id="theme-icon">🌙</span>
       </button>
@@ -62,7 +62,7 @@
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
       </svg>
-      <span>Config</span>
+      <span>Settings</span>
     </button>
   </nav>
 

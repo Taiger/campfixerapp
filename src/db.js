@@ -35,7 +35,7 @@ let promiser = null;
 // Required on every subsequent promiser call that targets a specific database.
 let dbId = null;
 
-// Starts the SQLite worker, opens (or creates) campfixer.db in OPFS, creates
+// Starts the SQLite worker, opens (or creates) campfixer-v2.db in OPFS, creates
 // the three core tables if they don't exist, then requests durable storage so
 // the browser won't silently evict the database file under quota pressure.
 //
@@ -55,9 +55,10 @@ async function initDB() {
   });
 
   // The "file:" URI with "?vfs=opfs" tells sqlite-wasm to use the OPFS VFS.
-  // The filename becomes the OPFS entry name; changing it creates a new database.
+  // The filename is schema-versioned because this unreleased app intentionally
+  // resets local data instead of migrating old database shapes.
   const openResult = await promiser('open', {
-    filename: 'file:campfixer.db?vfs=opfs',
+    filename: 'file:campfixer-v2.db?vfs=opfs',
   });
   dbId = openResult.dbId;
 
@@ -74,6 +75,10 @@ async function initDB() {
     id TEXT PRIMARY KEY,
     templateId TEXT,
     name TEXT NOT NULL,
+    startDate TEXT DEFAULT '',
+    endDate TEXT DEFAULT '',
+    locationUrl TEXT DEFAULT '',
+    description TEXT DEFAULT '',
     lastSyncedVersion INTEGER DEFAULT 1,
     createdAt TEXT
   )`);
@@ -91,9 +96,6 @@ async function initDB() {
     packed INTEGER DEFAULT 0,
     extraFields TEXT DEFAULT '{}'
   )`);
-
-  // Migrate existing databases that predate the extraFields column.
-  try { await run(`ALTER TABLE plan_items ADD COLUMN extraFields TEXT DEFAULT '{}'`); } catch (_) {}
 
   // Ask the browser to treat this origin's storage as durable.  Without this,
   // Chrome/Edge may silently delete OPFS data when the device runs low on space.
