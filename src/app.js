@@ -16,6 +16,7 @@ import {
   savePlans,
   deletePlan,
   loadTrips,
+  saveTrips,
   createTripFromPlan,
   addTrip,
   updateTrip,
@@ -39,6 +40,8 @@ const state = {
   editingTrip: null,      // working copy of activeTrip (with _fields arrays)
   expandedTripItemIndex: null,  // index of the inline-expanded TripItem, or null
   expandedPlanItemIndex: null,  // index of the inline-expanded PlanItem, or null
+  pendingNewTripItemId: null,   // tripItemId of the most recently added TripItem (renders first)
+  pendingNewPlanItemId: null,   // id of the most recently added PlanItem (renders first)
   tripDetailsOpen: false,
 };
 
@@ -161,8 +164,34 @@ function getWeightUnit() {
   return localStorage.getItem('campfixer:weightUnit') || 'lbs';
 }
 
-function toggleWeightUnit() {
-  localStorage.setItem('campfixer:weightUnit', getWeightUnit() === 'lbs' ? 'kg' : 'lbs');
+const GRAMS_PER_UNIT = { g: 1, oz: 28.3495, lbs: 453.592, kg: 1000 };
+
+function convertWeight(valueStr, fromUnit, toUnit) {
+  if (!valueStr || fromUnit === toUnit) return valueStr;
+  const num = parseFloat(valueStr);
+  if (!isFinite(num) || num === 0) return valueStr;
+  const converted = (num * GRAMS_PER_UNIT[fromUnit]) / GRAMS_PER_UNIT[toUnit];
+  return toUnit === 'g'
+    ? String(Math.round(converted))
+    : String(parseFloat(converted.toFixed(2)));
+}
+
+async function setWeightUnit(unit) {
+  const prev = getWeightUnit();
+  if (prev === unit) return;
+
+  const applyConversion = items =>
+    items.forEach(item => { item.weight = convertWeight(item.weight, prev, unit); });
+
+  state.trips.forEach(t => applyConversion(t.items));
+  state.plans.forEach(p => applyConversion(p.defaultItems));
+  if (state.editingTrip) applyConversion(state.editingTrip.items);
+  if (state.editingPlan) applyConversion(state.editingPlan.defaultItems);
+
+  await saveTrips(state.trips);
+  await savePlans(state.plans);
+
+  localStorage.setItem('campfixer:weightUnit', unit);
   rerender();
 }
 
@@ -237,6 +266,29 @@ function sectionLabel(label, count, cls = '') {
       <span>${label}</span>
       <span class="section-count">${count}</span>
     </span>`;
+}
+
+// ─── Sort helpers ─────────────────────────────────────────────────────────────
+
+function getSortOrder() { return localStorage.getItem('itemSort') || 'priority'; }
+function setSortOrder(v) { localStorage.setItem('itemSort', v); }
+
+const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
+function sortItems(items) {
+  const sort = getSortOrder();
+  if (sort === 'alpha') return [...items].sort((a, b) => a.name.localeCompare(b.name));
+  return [...items].sort((a, b) => (PRIORITY_ORDER[a.importance] ?? 1) - (PRIORITY_ORDER[b.importance] ?? 1));
+}
+
+function sortToggleTemplate() {
+  const sort = getSortOrder();
+  return html`
+    <div class="sort-toggle">
+      <button class="sort-btn ${sort === 'priority' ? 'active' : ''}"
+              @click=${() => { setSortOrder('priority'); rerender(); }}>Priority</button>
+      <button class="sort-btn ${sort === 'alpha' ? 'active' : ''}"
+              @click=${() => { setSortOrder('alpha'); rerender(); }}>A–Z</button>
+    </div>`;
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -445,6 +497,7 @@ function tripItemRow(item, index) {
                 @click=${() => toggleExpandedTripItem(index)}>
           ${item.name}
         </button>
+        ${!item.packed ? importanceBadge(item.importance) : ''}
         <button class="flex-shrink-0 w-9 h-9 flex items-center justify-center
                        text-stone-400 hover:text-stone-600 dark:hover:text-stone-300
                        rounded-lg transition-colors"
@@ -487,38 +540,39 @@ function tripItemExpandedTemplate(item, index) {
                  @blur=${persistEditingTripDraft} />
         </label>
 
-        <div class="span-2">
-          <p class="compact-label">Importance</p>
-          <div class="importance-toggle compact">
-            ${['High', 'Medium', 'Low'].map(level => html`
-              <button class="importance-btn ${item.importance === level ? 'selected' : ''}"
-                      data-value="${level}"
-                      @click=${async () => {
-                        state.editingTrip.items[index].importance = level;
-                        rerender();
-                        await persistEditingTripDraft();
-                      }}>
-                ${level}
-              </button>`)}
+        <div class="item-meta-row span-2">
+          <div>
+            <p class="compact-label">Importance</p>
+            <div class="importance-toggle mini">
+              ${['High', 'Medium', 'Low'].map(level => html`
+                <button class="importance-btn ${item.importance === level ? 'selected' : ''}"
+                        data-value="${level}"
+                        @click=${async () => {
+                          state.editingTrip.items[index].importance = level;
+                          rerender();
+                          await persistEditingTripDraft();
+                        }}>
+                  ${level[0]}
+                </button>`)}
+            </div>
           </div>
-        </div>
-
-        <label class="compact-field">Size
-          <select .value=${item.size || ''}
-                  @change=${async e => {
-                    state.editingTrip.items[index].size = e.target.value;
-                    await persistEditingTripDraft();
-                  }}>
-              <option value="">Pick size</option>
+          <label class="compact-field">Size
+            <select .value=${item.size || ''}
+                    @change=${async e => {
+                      state.editingTrip.items[index].size = e.target.value;
+                      await persistEditingTripDraft();
+                    }}>
+              <option value="">—</option>
               ${SIZE_OPTIONS.map(s => html`
-                <option value=${s.value} ?selected=${item.size === s.value}>${s.label}</option>`)}
-          </select>
-        </label>
-        <label class="compact-field">Weight (${unit})
-          <input type="number" min="0" step="0.1" .value=${item.weight || ''}
-                 @input=${e => { state.editingTrip.items[index].weight = e.target.value; }}
-                 @blur=${persistEditingTripDraft} />
-        </label>
+                <option value=${s.value} ?selected=${item.size === s.value}>${s.value}</option>`)}
+            </select>
+          </label>
+          <label class="compact-field">Weight (${unit})
+            <input type="number" min="0" step="${unit === 'g' ? '1' : '0.1'}" .value=${item.weight || ''}
+                   @input=${e => { state.editingTrip.items[index].weight = e.target.value; }}
+                   @blur=${persistEditingTripDraft} />
+          </label>
+        </div>
 
         <label class="compact-field span-2">Notes
           <textarea rows="2" .value=${item.description || ''}
@@ -535,6 +589,7 @@ function tripItemExpandedTemplate(item, index) {
 
 async function closeExpandedTripItem() {
   state.expandedTripItemIndex = null;
+  state.pendingNewTripItemId = null;
   rerender();
   await persistEditingTripDraft();
 }
@@ -596,6 +651,7 @@ async function addNewTripItem() {
   state.editingTrip.items.push(newItem);
   const index = state.editingTrip.items.length - 1;
   state.expandedTripItemIndex = index;
+  state.pendingNewTripItemId = newItem.tripItemId;
   rerender();
   await persistEditingTripDraft();
 }
@@ -686,10 +742,11 @@ function tripDetailTemplate() {
   const weight = tripWeightSummary(trip);
   const unit = getWeightUnit();
 
-  const highItems   = trip.items.filter(i => !i.packed && i.importance === 'High');
-  const medItems    = trip.items.filter(i => !i.packed && i.importance === 'Medium');
-  const lowItems    = trip.items.filter(i => !i.packed && i.importance === 'Low');
-  const packedItems = trip.items.filter(i => i.packed);
+  const allUnpacked   = trip.items.filter(i => !i.packed);
+  const newItem       = allUnpacked.find(i => i.tripItemId === state.pendingNewTripItemId);
+  const sortedRest    = sortItems(newItem ? allUnpacked.filter(i => i !== newItem) : allUnpacked);
+  const unpackedItems = newItem ? [newItem, ...sortedRest] : sortedRest;
+  const packedItems   = trip.items.filter(i => i.packed);
 
   const fab = document.getElementById('fab-new-trip');
   if (fab) fab.classList.add('hidden');
@@ -751,40 +808,13 @@ function tripDetailTemplate() {
       <!-- Action row -->
       <div class="primary-action-row">
         <button @click=${addNewTripItem} class="btn-primary">Add item</button>
+        ${sortToggleTemplate()}
       </div>
 
-      <!-- High importance — always rendered, hidden when empty -->
-      <details class="section-group ${highItems.length === 0 ? 'hidden' : ''}" open>
-        <summary>
-          ${sectionLabel('High', highItems.length, 'priority-high')}
-          <span class="text-stone-400 text-sm font-normal">▾</span>
-        </summary>
-        <div>
-          ${highItems.map(item => tripItemRow(item, trip.items.indexOf(item)))}
-        </div>
-      </details>
-
-      <!-- Medium importance -->
-      <details class="section-group ${medItems.length === 0 ? 'hidden' : ''}" open>
-        <summary>
-          ${sectionLabel('Medium', medItems.length, 'priority-medium')}
-          <span class="text-stone-400 text-sm font-normal">▾</span>
-        </summary>
-        <div>
-          ${medItems.map(item => tripItemRow(item, trip.items.indexOf(item)))}
-        </div>
-      </details>
-
-      <!-- Low importance -->
-      <details class="section-group ${lowItems.length === 0 ? 'hidden' : ''}">
-        <summary>
-          ${sectionLabel('Low', lowItems.length, 'priority-low')}
-          <span class="text-stone-400 text-sm font-normal">▾</span>
-        </summary>
-        <div>
-          ${lowItems.map(item => tripItemRow(item, trip.items.indexOf(item)))}
-        </div>
-      </details>
+      <!-- All unpacked items (flat, sorted) -->
+      <div class="list">
+        ${unpackedItems.map(item => tripItemRow(item, trip.items.indexOf(item)))}
+      </div>
 
       <!-- Packed items -->
       <details class="section-group ${packedItems.length === 0 ? 'hidden' : ''}">
@@ -916,15 +946,26 @@ function configTemplate() {
           <span>${isDark ? '☀' : '🌙'}</span>
         </button>
       </div>
-      <div class="config-card flex items-center justify-between">
-        <div>
-          <p class="font-medium text-stone-800 dark:text-stone-200">Weight unit</p>
-          <p class="text-xs text-stone-400 mt-0.5">Used for all item weight fields</p>
+      <div class="config-card">
+        <p class="font-medium text-stone-800 dark:text-stone-200 mb-2">Weight unit</p>
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <p class="text-xs text-stone-400 mb-1">Imperial</p>
+            <div class="flex gap-1">
+              ${['lbs', 'oz'].map(u => html`
+                <button class="sort-btn flex-1 ${unit === u ? 'active' : ''}"
+                        @click=${() => setWeightUnit(u)}>${u}</button>`)}
+            </div>
+          </div>
+          <div class="flex-1">
+            <p class="text-xs text-stone-400 mb-1">Metric</p>
+            <div class="flex gap-1">
+              ${['kg', 'g'].map(u => html`
+                <button class="sort-btn flex-1 ${unit === u ? 'active' : ''}"
+                        @click=${() => setWeightUnit(u)}>${u}</button>`)}
+            </div>
+          </div>
         </div>
-        <button @click=${toggleWeightUnit}
-                class="btn-secondary text-xs px-3 py-1.5 flex-shrink-0 font-mono">
-          ${unit === 'lbs' ? 'lbs → kg' : 'kg → lbs'}
-        </button>
       </div>
 
       <!-- Backup -->
@@ -995,45 +1036,45 @@ function planItemRow(item, index) {
       ${isExpanded ? html`
         <div class="item-expand">
           <div class="grid gap-3">
-            <label class="form-label">Name
+            <label class="compact-field">Name
               <input type="text" .value=${item.name}
                      @input=${e => { p.defaultItems[index].name = e.target.value; rerender(); }} />
             </label>
-            <div>
-              <p class="form-label mb-1">Importance</p>
-              <div class="importance-toggle">
-                ${['High', 'Medium', 'Low'].map(level => html`
-                  <button class="importance-btn ${item.importance === level ? 'selected' : ''}"
-                          data-value="${level}"
-                          @click=${() => {
-                            p.defaultItems[index].importance = level;
-                            rerender();
-                          }}>
-                    ${level}
-                  </button>`)}
+            <div class="item-meta-row">
+              <div>
+                <p class="compact-label">Importance</p>
+                <div class="importance-toggle mini">
+                  ${['High', 'Medium', 'Low'].map(level => html`
+                    <button class="importance-btn ${item.importance === level ? 'selected' : ''}"
+                            data-value="${level}"
+                            @click=${() => {
+                              p.defaultItems[index].importance = level;
+                              rerender();
+                            }}>
+                      ${level[0]}
+                    </button>`)}
+                </div>
               </div>
-            </div>
-            <div class="inline-fields">
-              <label class="form-label">Size
+              <label class="compact-field">Size
                 <select .value=${item.size || ''}
                         @change=${e => { p.defaultItems[index].size = e.target.value; }}>
-                  <option value="">— pick size —</option>
+                  <option value="">—</option>
                   ${SIZE_OPTIONS.map(s => html`
-                    <option value=${s.value} ?selected=${item.size === s.value}>${s.label}</option>`)}
+                    <option value=${s.value} ?selected=${item.size === s.value}>${s.value}</option>`)}
                 </select>
               </label>
-              <label class="form-label">Weight (${unit})
-                <input type="number" min="0" step="0.1" .value=${item.weight || ''}
+              <label class="compact-field">Weight (${unit})
+                <input type="number" min="0" step="${unit === 'g' ? '1' : '0.1'}" .value=${item.weight || ''}
                        @input=${e => { p.defaultItems[index].weight = e.target.value; }} />
               </label>
             </div>
-            <label class="form-label">Description
+            <label class="compact-field">Description
               <textarea rows="2" .value=${item.description || ''}
                         @input=${e => { p.defaultItems[index].description = e.target.value; }}></textarea>
             </label>
           </div>
           <div class="flex gap-2 mt-3">
-            <button @click=${() => { state.expandedPlanItemIndex = null; rerender(); }}
+            <button @click=${() => { state.expandedPlanItemIndex = null; state.pendingNewPlanItemId = null; rerender(); }}
                     class="btn-secondary text-sm">Close</button>
             <button @click=${() => { p.defaultItems.splice(index, 1); state.expandedPlanItemIndex = null; rerender(); }}
                     class="btn-danger text-sm ml-auto">Remove</button>
@@ -1065,23 +1106,32 @@ function planEditorTemplate() {
       </form>
       <div class="section-header mt-6 mb-1">
         <h3 class="font-semibold text-stone-900 dark:text-stone-100">Default items</h3>
-        <button @click=${() => {
-          const newItem = withFields({
-            id: generateId('item'),
-            name: 'New item',
-            importance: 'Medium',
-            description: '',
-            size: '',
-            weight: '',
-            extraFields: {},
-          });
-          p.defaultItems.push(newItem);
-          state.expandedPlanItemIndex = p.defaultItems.length - 1;
-          rerender();
-        }} class="btn-secondary">+ Add item</button>
+        <div class="flex items-center gap-2">
+          ${sortToggleTemplate()}
+          <button @click=${() => {
+            const newItem = withFields({
+              id: generateId('item'),
+              name: 'New item',
+              importance: 'Medium',
+              description: '',
+              size: '',
+              weight: '',
+              extraFields: {},
+            });
+            p.defaultItems.push(newItem);
+            state.expandedPlanItemIndex = p.defaultItems.length - 1;
+            state.pendingNewPlanItemId = newItem.id;
+            rerender();
+          }} class="btn-secondary">+ Add item</button>
+        </div>
       </div>
       <div class="list">
-        ${p.defaultItems.map((item, i) => planItemRow(item, i))}
+        ${(() => {
+          const newItem   = p.defaultItems.find(i => i.id === state.pendingNewPlanItemId);
+          const sortedRest = sortItems(newItem ? p.defaultItems.filter(i => i !== newItem) : p.defaultItems);
+          const display   = newItem ? [newItem, ...sortedRest] : sortedRest;
+          return display.map(item => planItemRow(item, p.defaultItems.indexOf(item)));
+        })()}
       </div>
       <div class="form-actions">
         <button @click=${saveEditingPlan} class="btn-primary">Save plan</button>
