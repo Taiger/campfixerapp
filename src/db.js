@@ -97,6 +97,9 @@ async function initDB() {
     extraFields TEXT DEFAULT '{}'
   )`);
 
+  // Migration: add quantity column for existing databases (no-op if already present).
+  await run(`ALTER TABLE plan_items ADD COLUMN quantity INTEGER DEFAULT 1`).catch(() => {});
+
   // Ask the browser to treat this origin's storage as durable.  Without this,
   // Chrome/Edge may silently delete OPFS data when the device runs low on space.
   // The call is best-effort — the browser may decline without any error.

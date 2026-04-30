@@ -171,6 +171,7 @@ export async function createTripFromPlan(plan, tripName) {
     description: item.description,
     size: item.size,
     weight: item.weight,
+    quantity: item.quantity || 1,
     packed: false,
     extraFields: item.extraFields || {},
   }));
@@ -253,6 +254,7 @@ export async function syncTripWithPlan(trip, plan) {
       description: item.description,
       size: item.size,
       weight: item.weight,
+      quantity: item.quantity || 1,
       packed: false,
       extraFields: item.extraFields || {},
     }));
@@ -290,6 +292,7 @@ export async function pushTripItemsToPlan(trip, plan) {
     description: item.description,
     size: item.size || '',
     weight: item.weight || '',
+    quantity: item.quantity || 1,
     extraFields: item.extraFields || {},
   }));
 
@@ -342,6 +345,7 @@ function _rowToTrip(row, itemRows) {
       description: r.description,
       size: r.size,
       weight: r.weight,
+      quantity: r.quantity || 1,
       packed: r.packed === 1,
       extraFields: (() => { try { return JSON.parse(r.extraFields || '{}'); } catch (_) { return {}; } })(),
     })),
@@ -351,15 +355,15 @@ function _rowToTrip(row, itemRows) {
 // Inserts a TripItem into `plan_items`, mapping in-memory names back to DB column names.
 async function _insertTripItem(item, tripId) {
   await run(
-    `INSERT INTO plan_items (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, packed, extraFields)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO plan_items (planItemId, planId, sourceTemplateId, sourceItemId, name, importance, description, size, weight, quantity, packed, extraFields)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       item.tripItemId,                   // DB column: planItemId
       tripId,                            // DB column: planId
       item.sourcePlanId || null,         // DB column: sourceTemplateId
       item.sourcePlanItemId || null,     // DB column: sourceItemId
       item.name || '', item.importance || 'Medium', item.description || '',
-      item.size || '', item.weight || '', item.packed ? 1 : 0,
+      item.size || '', item.weight || '', item.quantity || 1, item.packed ? 1 : 0,
       JSON.stringify(item.extraFields || {}),
     ]
   );

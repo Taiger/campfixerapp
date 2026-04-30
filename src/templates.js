@@ -17,7 +17,7 @@ export const SIZE_OPTIONS = [
   { value: 'Large',  label: 'Large (portable fire pit)' },
 ];
 
-function planItem(id, name, importance, size, weight, description = '') {
+function planItem(id, name, importance, size, weight, description = '', quantity = 1) {
   return {
     id,
     name,
@@ -25,6 +25,7 @@ function planItem(id, name, importance, size, weight, description = '') {
     description,
     size,
     weight,
+    quantity,
     extraFields: {},
   };
 }
@@ -124,6 +125,7 @@ function normalizePlanItem(item) {
     description: item.description || '',
     size: item.size || '',
     weight: item.weight || '',
+    quantity: Number(item.quantity) || 1,
     extraFields: item.extraFields || {},
   };
 }

@@ -42,6 +42,7 @@ const state = {
   expandedPlanItemIndex: null,  // index of the inline-expanded PlanItem, or null
   pendingNewTripItemId: null,   // tripItemId of the most recently added TripItem (renders first)
   pendingNewPlanItemId: null,   // id of the most recently added PlanItem (renders first)
+  justPackedItemId: null,       // tripItemId receiving the pack-in animation in the Packed section
   tripDetailsOpen: false,
 };
 
@@ -231,14 +232,15 @@ function packedProgress(trip) {
 }
 
 function tripWeightSummary(trip) {
+  const itemTotal = item => Number.parseFloat(item.weight) * (item.quantity || 1);
   const weights = trip.items
-    .map(item => Number.parseFloat(item.weight))
-    .filter(weight => Number.isFinite(weight) && weight > 0);
+    .map(itemTotal)
+    .filter(w => Number.isFinite(w) && w > 0);
   const packedWeights = trip.items
     .filter(item => item.packed)
-    .map(item => Number.parseFloat(item.weight))
-    .filter(weight => Number.isFinite(weight) && weight > 0);
-  const sum = values => values.reduce((total, weight) => total + weight, 0);
+    .map(itemTotal)
+    .filter(w => Number.isFinite(w) && w > 0);
+  const sum = values => values.reduce((total, w) => total + w, 0);
   return {
     total: sum(weights),
     packed: sum(packedWeights),
@@ -476,11 +478,13 @@ function tripCardTemplate(trip) {
 // ─── Trip detail ──────────────────────────────────────────────────────────────
 
 // Condensed TripItem row: checkbox packs; label/edit button opens inline editing.
-function tripItemRow(item, index) {
+function tripItemRow(item, index, context = 'unpacked') {
   const isExpanded = state.expandedTripItemIndex === index;
+  const isJustPacked = context === 'packed' && item.tripItemId === state.justPackedItemId;
 
   return html`
-    <div class="item-row-wrap">
+    <div class="item-row-wrap ${isJustPacked ? 'just-packed' : ''}"
+         data-item-id="${item.tripItemId}">
       <div class="check-row">
         <button class="check-box ${item.packed ? 'checked' : ''}"
                 type="button"
@@ -497,6 +501,7 @@ function tripItemRow(item, index) {
                 @click=${() => toggleExpandedTripItem(index)}>
           ${item.name}
         </button>
+        ${(item.quantity || 1) > 1 ? html`<span class="qty-badge">×${item.quantity}</span>` : ''}
         ${!item.packed ? importanceBadge(item.importance) : ''}
         <button class="flex-shrink-0 w-9 h-9 flex items-center justify-center
                        text-stone-400 hover:text-stone-600 dark:hover:text-stone-300
@@ -552,7 +557,7 @@ function tripItemExpandedTemplate(item, index) {
                           rerender();
                           await persistEditingTripDraft();
                         }}>
-                  ${level[0]}
+                  ${level}
                 </button>`)}
             </div>
           </div>
@@ -567,12 +572,21 @@ function tripItemExpandedTemplate(item, index) {
                 <option value=${s.value} ?selected=${item.size === s.value}>${s.value}</option>`)}
             </select>
           </label>
-          <label class="compact-field">Weight (${unit})
+          <label class="compact-field">Qty
+            <input type="number" min="1" step="1" .value=${item.quantity || 1}
+                   @input=${e => { state.editingTrip.items[index].quantity = Math.max(1, parseInt(e.target.value) || 1); }}
+                   @blur=${persistEditingTripDraft} />
+          </label>
+          <label class="compact-field">${(item.quantity || 1) > 1 ? `Weight/item (${unit})` : `Weight (${unit})`}
             <input type="number" min="0" step="${unit === 'g' ? '1' : '0.1'}" .value=${item.weight || ''}
                    @input=${e => { state.editingTrip.items[index].weight = e.target.value; }}
                    @blur=${persistEditingTripDraft} />
           </label>
         </div>
+        ${(item.quantity || 1) > 1 && item.weight ? html`
+          <p class="total-weight-hint">
+            Total: ${formatWeight((item.quantity || 1) * (parseFloat(item.weight) || 0))} ${unit}
+          </p>` : ''}
 
         <label class="compact-field span-2">Notes
           <textarea rows="2" .value=${item.description || ''}
@@ -613,9 +627,24 @@ async function persistEditingTripDraft() {
 
 async function togglePackedTripItem(index) {
   if (!state.editingTrip) return;
-  state.editingTrip.items[index].packed = !state.editingTrip.items[index].packed;
+  const item = state.editingTrip.items[index];
+  const isPacking = !item.packed;
+
+  if (isPacking) {
+    const row = document.querySelector(`[data-item-id="${item.tripItemId}"]`);
+    if (row) {
+      row.classList.add('packing');
+      state.justPackedItemId = item.tripItemId;
+      await new Promise(r => setTimeout(r, 280));
+    }
+  }
+
+  item.packed = !item.packed;
+  if (state.expandedTripItemIndex === index) state.expandedTripItemIndex = null;
   rerender();
   await persistEditingTripDraft();
+
+  if (isPacking) setTimeout(() => { state.justPackedItemId = null; }, 400);
 }
 
 async function unpackAllTripItems() {
@@ -645,6 +674,7 @@ async function addNewTripItem() {
     description: '',
     size: '',
     weight: '',
+    quantity: 1,
     packed: false,
     extraFields: {},
   });
@@ -823,7 +853,7 @@ function tripDetailTemplate() {
           <span class="text-stone-400 text-sm font-normal">▾</span>
         </summary>
         <div class="opacity-60">
-          ${packedItems.map(item => tripItemRow(item, trip.items.indexOf(item)))}
+          ${packedItems.map(item => tripItemRow(item, trip.items.indexOf(item), 'packed'))}
         </div>
       </details>
 
@@ -1013,9 +1043,10 @@ function planItemRow(item, index) {
 
   return html`
     <div class="item-row-wrap">
-      <!-- Condensed row: name + badge + pencil -->
+      <!-- Condensed row: name + qty + badge + pencil -->
       <div class="check-row" style="cursor:default">
         <span class="check-row-label flex-1 min-w-0 truncate">${item.name || 'Unnamed item'}</span>
+        ${(item.quantity || 1) > 1 ? html`<span class="qty-badge">×${item.quantity}</span>` : ''}
         ${importanceBadge(item.importance)}
         <button class="flex-shrink-0 w-9 h-9 flex items-center justify-center
                        text-stone-400 hover:text-stone-600 dark:hover:text-stone-300
@@ -1051,7 +1082,7 @@ function planItemRow(item, index) {
                               p.defaultItems[index].importance = level;
                               rerender();
                             }}>
-                      ${level[0]}
+                      ${level}
                     </button>`)}
                 </div>
               </div>
@@ -1063,11 +1094,19 @@ function planItemRow(item, index) {
                     <option value=${s.value} ?selected=${item.size === s.value}>${s.value}</option>`)}
                 </select>
               </label>
-              <label class="compact-field">Weight (${unit})
+              <label class="compact-field">Qty
+                <input type="number" min="1" step="1" .value=${item.quantity || 1}
+                       @input=${e => { p.defaultItems[index].quantity = Math.max(1, parseInt(e.target.value) || 1); rerender(); }} />
+              </label>
+              <label class="compact-field">${(item.quantity || 1) > 1 ? `Weight/item (${unit})` : `Weight (${unit})`}
                 <input type="number" min="0" step="${unit === 'g' ? '1' : '0.1'}" .value=${item.weight || ''}
                        @input=${e => { p.defaultItems[index].weight = e.target.value; }} />
               </label>
             </div>
+            ${(item.quantity || 1) > 1 && item.weight ? html`
+              <p class="total-weight-hint">
+                Total: ${formatWeight((item.quantity || 1) * (parseFloat(item.weight) || 0))} ${unit}
+              </p>` : ''}
             <label class="compact-field">Description
               <textarea rows="2" .value=${item.description || ''}
                         @input=${e => { p.defaultItems[index].description = e.target.value; }}></textarea>
@@ -1116,6 +1155,7 @@ function planEditorTemplate() {
               description: '',
               size: '',
               weight: '',
+              quantity: 1,
               extraFields: {},
             });
             p.defaultItems.push(newItem);

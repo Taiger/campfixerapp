@@ -1342,6 +1342,47 @@ label:is(.dark *) {
   border-color: rgb(44 74 62 / 0.1);
 }
 
+@keyframes pack-out {
+  from { opacity: 1; transform: translateX(0); max-height: 6rem; margin-bottom: 0; }
+  to   { opacity: 0; transform: translateX(1.5rem); max-height: 0; margin-bottom: 0; }
+}
+
+@keyframes pack-in {
+  from { opacity: 0; transform: translateX(-0.75rem); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.item-row-wrap.packing {
+  animation: pack-out 280ms ease-in forwards;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.item-row-wrap.just-packed {
+  animation: pack-in 300ms ease-out;
+}
+
+.qty-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  color: rgb(120 113 108);
+}
+
+.qty-badge:is(.dark *) {
+  color: rgb(168 162 158);
+}
+
+.total-weight-hint {
+  font-size: 0.7rem;
+  color: rgb(120 113 108);
+  margin-top: 0.125rem;
+}
+
+.total-weight-hint:is(.dark *) {
+  color: rgb(168 162 158);
+}
+
 /* Inline edit form that expands below a condensed row. */
 
 .item-expand {
